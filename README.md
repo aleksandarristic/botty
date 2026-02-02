@@ -1,93 +1,84 @@
 # Botty - A Python Telegram Bot for Home Server Monitoring
 
-This project contains the source code for "botty", a Python-based Telegram bot designed to monitor a home server. The bot is built using the `python-telegram-bot` library for handling Telegram API interactions and `httpx` for making asynchronous HTTP requests to a local dashboard application.
+Botty is a Python-based Telegram bot that keeps an eye on a personal server by wrapping shell checks and external dashboards in secure bot commands. It runs on `python-telegram-bot`, pulls metrics via `httpx`, and sanitizes every response with custom MarkdownV2 helpers before replying.
 
-The bot's functionality is centered around a series of slash commands that can be issued from a Telegram chat. For security, the bot is configured to only respond to a single, authorized user ID.
+## Installation
 
-## Easy Installation (Recommended)
+### Automated service deployment
 
-An interactive script is provided to handle the installation and setup of the bot as a systemd service.
-
-### Remote Installation (via `curl`)
-
-You can install the bot using a single command. The script will guide you through the process, asking for an installation directory and your credentials.
+The `install.sh` script builds a virtual environment, installs the package, and wires up a `systemd` service. It can run either from a local clone or fetched directly over `curl`:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/aleksandarristic/botty/main/install.sh | bash
 ```
 
-> **Security Warning:** Piping a script from the internet directly into `bash` is convenient but can be dangerous. We recommend you inspect the script's contents by visiting the URL in your browser before running it.
+When run from within the repository, `./install.sh` detects the local tree, prompts for any missing credentials or paths, and (when `--update` is passed) pulls the latest commits before reinstalling dependencies. Behind the scenes it:
 
-### Local Installation (from clone)
+1. Prompts for or sources `TELEGRAM_BOT_TOKEN` and one or more comma-separated `AUTHORIZED_USER_ID`s.
+2. Prompts for optional service-specific values (`GOHOME_API_URL`, `EMBY_DATA_PATH`, `MEDIA_PATH`) when not already set.
+3. Creates `./.venv`, installs `botty` in editable mode, and writes a `botty.env` file.
+4. Registers `/etc/systemd/system/botty.service`, reloads the daemon, enables, and restarts the service.
 
-If you have already cloned the repository, you can run the installer directly. It will automatically detect the local repository, pull the latest changes, and use the current directory for the installation.
+Additional flags:
 
-```bash
-cd botty
-./install.sh
-```
+- `--update`: reruns `git pull` prior to reinstalling (skipped by default in local mode).
+- `--reinstall`: re-prompts for every secret and path, overwriting `botty.env`.
+- `--uninstall`: stops/disables the service and removes the unit file (leaving the install directory intact).
 
-### What the Script Does
+### Manual development setup
 
-The `install.sh` script is context-aware:
+For contributors or local experimentation:
 
-*   **Remote Installation (via `curl`):**
-    *   Asks for an installation directory.
-    *   **Clones the repository** into that directory.
-*   **Local Installation (from clone):**
-    *   Automatically uses the current directory.
-    *   **Performs a `git pull`** to ensure the code is up-to-date.
-
-In both cases, it then proceeds to:
-- Check for dependencies (`git`, `python3`, `pip`).
-- Ask for your Telegram credentials.
-- Set up a Python virtual environment and install the package.
-- Create, enable, and start a `systemd` service to run the bot in the background.
-
-## Developer Setup
-
-If you want to run the bot manually or contribute to development, follow these steps.
-
-### 1. Clone the Repository
 ```bash
 git clone https://github.com/aleksandarristic/botty.git
 cd botty
-```
-
-### 2. Set up the Environment
-Create a Python virtual environment and install the project in editable mode. This will also install all dependencies, including development tools like `pytest`.
-```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e .[dev]
 ```
 
-### 3. Configure the Bot
-Create a `.env` file in the root of the project by copying the example file:
+Copy the configuration template and fill in your secrets:
+
 ```bash
 cp .env.example .env
-```
-Now, edit the `.env` file and add your credentials:
-- `TELEGRAM_BOT_TOKEN`: Your Telegram bot token from BotFather.
-- `AUTHORIZED_USER_ID`: Your Telegram user ID.
-- `GOHOME_API_URL`: (Optional) The URL for your dashboard's status API.
-
-### 4. Running the Bot Manually
-After activating the virtual environment (`source .venv/bin/activate`), you can run the bot using the entry point created during installation:
-```bash
-botty
+# EDIT: set TELEGRAM_BOT_TOKEN, AUTHORIZED_USER_ID, etc.
 ```
 
-### 5. Running Tests
-To run the test suite, use `pytest`:
+Run the bot locally with `botty`.
+
+## Configuration
+
+- `TELEGRAM_BOT_TOKEN`: token from BotFather.
+- `AUTHORIZED_USER_ID`: comma-separated list of Telegram IDs who may use the commands.
+- `GOHOME_API_URL`: endpoint for network results (default `http://localhost:8080/status`).
+- `EMBY_DATA_PATH` / `MEDIA_PATH`: paths used for drive checks; defaults `/mnt/embydata` and `/mnt/media`.
+
+Service installations store these values in `botty.env`, whereas `.env` is used during manual runs.
+
+## Commands
+
+All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py` and protected by the `@authorized_only` decorator.
+
+- `/start` and `/help`: list the available commands and remind the user of the current UI.
+- `/status`: reports uptime, memory, and disk usage gathered from `uptime`, `free`, and `df`.
+- `/emby_status`: fetches `systemctl status emby-server`, plus drive usage for `EMBY_DATA_PATH` and `MEDIA_PATH`.
+- `/adguard_status`: fetches `systemctl status AdGuardHome`.
+- `/network_tests`: queries the GoHome API and formats speedtest stats, ping targets, and device metrics (temperature, memory, load averages, uptime) inside fenced MarkdownV2 code blocks.
+
+Every textual reply is sanitized with `escape_markdown` / `escape_markdown_code` helpers in `src/botty/cmd/utils.py` to stay compatible with Telegram MarkdownV2.
+
+## Testing
+
+The `tests/` directory covers command handlers and utilities via `pytest` and `pytest-asyncio`. Mocking (`unittest.mock`) isolates shell commands and HTTP calls. Run the suite with:
+
 ```bash
 pytest
 ```
 
-### Development Conventions
-The project uses a modular structure for commands, making it easy to extend.
-- **`src/botty/main.py`**: The main application entry point.
-- **`src/botty/cmd/`**: The command module.
-  - **`handlers.py`**: Contains the implementation for each command handler.
-  - **`__init__.py`**: Acts as a central command registry.
-- To add a new command, add your handler to `handlers.py` and register it in `__init__.py`.
+## Structure
+
+- `src/botty/main.py`: entry point invoked by the `botty` console script defined in `pyproject.toml`.
+- `src/botty/cmd/{handlers,utils}.py`: command implementations, helpers, and the `command_registry`.
+- `tests/`: handler and utility tests.
+- `install.sh`: produces the `.venv` installation, configuration file, and systemd unit.
+- `.env.example`: template for local development secrets.
