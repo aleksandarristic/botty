@@ -1,10 +1,10 @@
 from .handlers import (
-    start,
-    help_command,
-    status_command,
-    emby_status_command,
     adguard_status_command,
+    emby_status_command,
+    help_command,
     network_tests_command,
+    start,
+    status_command,
 )
 
 command_registry = [
