@@ -59,7 +59,7 @@ Service installations store these values in `botty.env`, whereas `.env` is used 
 
 All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py` and protected by the `@authorized_only` decorator.
 
-- `/start` and `/help`: list the available commands and remind the user of the current UI.
+- `/start`: list the available commands and remind the user of the current UI.
 - `/status`: reports uptime, memory, and disk usage gathered from `uptime`, `free`, and `df`.
 - `/emby_status`: fetches `systemctl status emby-server`, plus drive usage for `EMBY_DATA_PATH` and `MEDIA_PATH`.
 - `/adguard_status`: fetches `systemctl status AdGuardHome`.

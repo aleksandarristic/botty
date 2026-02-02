@@ -29,7 +29,9 @@ def main() -> None:
         application.add_handler(CommandHandler(command_name, handler))
 
     # Run the bot until the user presses Ctrl-C
-    application.run_polling()
+    application.run_polling(
+        timeout=60, allowed_updates=["message"], drop_pending_updates=True
+    )
 
 
 if __name__ == "__main__":

@@ -47,19 +47,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @authorized_only
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Lists all available commands."""
-    await update.message.reply_html(
-        "<b>Available Commands:</b>"
-        "\n/help - List available commands"
-        "\n/status - General server health"
-        "\n/emby_status - Emby media server status"
-        "\n/adguard_status - AdGuard Home status"
-        "\n/network_tests - Latest network test results"
-    )
-
-
-@authorized_only
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Provides a general server health check."""
     uptime = await run_command("uptime -p")
