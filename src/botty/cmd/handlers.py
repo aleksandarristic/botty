@@ -38,7 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     await update.message.reply_html(
         rf"Hi {user.mention_html()}! Here are the available commands:"
-        "\n/help - List available commands"
+        "\n/start - Shows this message"
         "\n/status - General server health"
         "\n/emby_status - Emby media server status"
         "\n/adguard_status - AdGuard Home status"
