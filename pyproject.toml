@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "botty"
+version = "0.1.0"
+description = "A Python Telegram bot for home server monitoring."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "python-telegram-bot",
+    "httpx",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[project.scripts]
+botty = "botty.main:main"
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["botty"]
+
+[tool.pytest.ini_options]
+pythonpath = "src"
