@@ -58,9 +58,7 @@ def format_network_tests(data: dict) -> str:
                 avg_str = f"{avg:.2f}" if isinstance(avg, (int, float)) else "N/A"
                 loss_str = f"{loss}" if loss is not None else "N/A"
 
-                section += (
-                    f"{name[:15]:<15}: {avg_str:>6} ms (Loss: {loss_str:>3}%)\n"
-                )
+                section += f"{name[:15]:<15}: {avg_str:>6} ms (Loss: {loss_str:>3}%)\n"
             message += f"*Ping:*\n```\n{escape_markdown_code(section.strip())}\n```\n"
         else:
             message += "*Ping:*\\n```\\nNo targets found\\n```\\n"
@@ -87,9 +85,7 @@ def format_network_tests(data: dict) -> str:
 
         load_str = (
             f"{load_1:.2f}, {load_5:.2f}, {load_15:.2f}"
-            if all(
-                isinstance(load, (int, float)) for load in [load_1, load_5, load_15]
-            )
+            if all(isinstance(load, (int, float)) for load in [load_1, load_5, load_15])
             else "N/A"
         )
 

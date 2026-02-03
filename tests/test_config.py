@@ -1,4 +1,3 @@
-import os
 
 from botty.config import BottyConfig
 

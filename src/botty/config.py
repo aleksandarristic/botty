@@ -15,7 +15,9 @@ class BottyConfig:
     @classmethod
     def from_env(cls) -> "BottyConfig":
         auth_env = os.getenv("AUTHORIZED_USER_ID", "")
-        authorized_user_ids = [uid.strip() for uid in auth_env.split(",") if uid.strip()]
+        authorized_user_ids = [
+            uid.strip() for uid in auth_env.split(",") if uid.strip()
+        ]
         return cls(
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN"),
             authorized_user_ids=authorized_user_ids,
