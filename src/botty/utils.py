@@ -1,8 +1,8 @@
 import asyncio
 import os
-from botty.services.markdown import escape_markdown, escape_markdown_code
-import subprocess
+import re
 import shutil
+import subprocess
 from typing import List
 
 
@@ -69,6 +69,19 @@ async def run_command(command: List[str], timeout: float = 10.0) -> str:
     if process.returncode != 0:
         return f"Error: (code {process.returncode}) {combined}".rstrip()
     return combined
+
+
+def escape_markdown(text: str) -> str:
+    """Escapes special characters for Telegram MarkdownV2 (outside of code blocks)."""
+    escape_chars = r"_*[]()~`>#+-=|{}.!"
+    # We need 3 backslashes in the file: r"\\\u0001"
+    return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
+
+
+def escape_markdown_code(text: str) -> str:
+    """Escapes special characters for Telegram MarkdownV2 (inside inline code/pre blocks)."""
+    # Only backslash and backtick need escaping inside code blocks
+    return text.replace("\\", "\\\\").replace("`", "\\`")
 
 
 __all__ = ["run_command", "escape_markdown", "escape_markdown_code"]

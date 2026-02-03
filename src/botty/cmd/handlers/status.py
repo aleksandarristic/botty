@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from botty.services.system_checks import get_status_checks
-from ..utils import escape_markdown_code
+from botty.utils import escape_markdown_code
 from .base import Command
 
 

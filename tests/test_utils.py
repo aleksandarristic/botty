@@ -1,6 +1,6 @@
 import pytest
 
-from botty.cmd.utils import escape_markdown, escape_markdown_code, run_command
+from botty.utils import escape_markdown, escape_markdown_code, run_command
 
 
 @pytest.mark.asyncio

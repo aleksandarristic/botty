@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from botty.services.system_checks import get_adguard_checks, get_emby_checks
-from ..utils import escape_markdown, escape_markdown_code
+from botty.utils import escape_markdown, escape_markdown_code
 from .base import Command
 
 

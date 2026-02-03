@@ -1,7 +1,7 @@
 import asyncio
 import time
 
-from botty.cmd.utils import run_command
+from botty.utils import run_command
 from botty.config import BottyConfig
 
 _CACHE_TTL_SECONDS = 15.0
