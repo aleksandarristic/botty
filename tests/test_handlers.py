@@ -51,22 +51,15 @@ async def test_unauthorized_user(mock_update, monkeypatch):
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.status.run_command")
+@patch("botty.cmd.handlers.status.get_status_checks")
 async def test_status_command(mock_run_command, mock_update, monkeypatch):
     """Test the /status command handler."""
     handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
-    mock_run_command.side_effect = [
-        "up 2 days",
-        "disk usage /",
-        "memory usage",
-    ]
+    mock_run_command.return_value = ("up 2 days", "disk usage /", "memory usage")
 
     await status_command.handle(mock_update, None)
 
-    assert mock_run_command.call_count == 3
-    mock_run_command.assert_any_call(["uptime", "-p"])
-    mock_run_command.assert_any_call(["df", "-h", "/"])
-    mock_run_command.assert_any_call(["free", "-h"])
+    mock_run_command.assert_called_once_with()
 
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]
@@ -76,28 +69,22 @@ async def test_status_command(mock_run_command, mock_update, monkeypatch):
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.media.run_command")
+@patch("botty.cmd.handlers.media.get_emby_checks")
 async def test_emby_status_command(mock_run_command, mock_update, monkeypatch):
     """Test the /emby_status command handler."""
     handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
     handler_config.emby_data_path = "/fake/embydata"
     handler_config.media_path = "/fake/media"
 
-    mock_run_command.side_effect = [
+    mock_run_command.return_value = (
         "emby is running",
         "embydata usage",
         "media usage",
-    ]
+    )
 
     await emby_status_command.handle(mock_update, None)
 
-    assert mock_run_command.call_count == 3
-    # Check the exact command with flags and custom paths
-    mock_run_command.assert_any_call(
-        ["systemctl", "status", "emby-server.service", "--no-pager", "-n", "0"]
-    )
-    mock_run_command.assert_any_call(["df", "-h", "/fake/embydata"])
-    mock_run_command.assert_any_call(["df", "-h", "/fake/media"])
+    mock_run_command.assert_called_once_with(handler_config)
 
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]
@@ -107,7 +94,7 @@ async def test_emby_status_command(mock_run_command, mock_update, monkeypatch):
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.media.run_command")
+@patch("botty.cmd.handlers.media.get_adguard_checks")
 async def test_adguard_status_command(mock_run_command, mock_update, monkeypatch):
     """Test the /adguard_status command handler."""
     handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
@@ -115,9 +102,7 @@ async def test_adguard_status_command(mock_run_command, mock_update, monkeypatch
 
     await adguard_status_command.handle(mock_update, None)
 
-    mock_run_command.assert_called_once_with(
-        ["systemctl", "status", "AdGuardHome.service", "--no-pager", "-n", "0"]
-    )
+    mock_run_command.assert_called_once_with()
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]
     assert "adguard is running" in call_args

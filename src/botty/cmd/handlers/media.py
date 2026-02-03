@@ -1,8 +1,8 @@
-import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from ..utils import escape_markdown, escape_markdown_code, run_command
+from botty.system_checks import get_adguard_checks, get_emby_checks
+from ..utils import escape_markdown, escape_markdown_code
 from .base import Command
 
 
@@ -11,13 +11,8 @@ class EmbyStatusCommand(Command):
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Checks the status of Emby media server."""
-        # -n 0 suppresses logs to avoid "Message too long" and parsing issues with special chars in logs
-        service_status, db_drive_status, media_drive_status = await asyncio.gather(
-            run_command(
-                ["systemctl", "status", "emby-server.service", "--no-pager", "-n", "0"]
-            ),
-            run_command(["df", "-h", self.config.emby_data_path]),
-            run_command(["df", "-h", self.config.media_path]),
+        service_status, db_drive_status, media_drive_status = await get_emby_checks(
+            self.config
         )
 
         message = "*Emby Media Server Status*\n\n"
@@ -41,10 +36,7 @@ class AdguardStatusCommand(Command):
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Checks the status of AdGuard Home."""
-        # -n 0 suppresses logs
-        service_status = await run_command(
-            ["systemctl", "status", "AdGuardHome.service", "--no-pager", "-n", "0"]
-        )
+        service_status = await get_adguard_checks()
 
         message = (
             f"*AdGuard Home Status*\n\n```\n{escape_markdown_code(service_status)}\n```"

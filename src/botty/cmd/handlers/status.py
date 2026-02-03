@@ -1,8 +1,8 @@
-import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from ..utils import escape_markdown_code, run_command
+from botty.system_checks import get_status_checks
+from ..utils import escape_markdown_code
 from .base import Command
 
 
@@ -28,11 +28,7 @@ class StatusCommand(Command):
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Provides a general server health check."""
-        uptime, disk_usage, memory_usage = await asyncio.gather(
-            run_command(["uptime", "-p"]),
-            run_command(["df", "-h", "/"]),
-            run_command(["free", "-h"]),
-        )
+        uptime, disk_usage, memory_usage = await get_status_checks()
 
         message = "*Server Status*\n\n"
         message += f"*Uptime:*\n```\n{escape_markdown_code(uptime)}\n```\n"
