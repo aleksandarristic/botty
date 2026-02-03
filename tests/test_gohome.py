@@ -1,4 +1,4 @@
-from botty.gohome import format_network_tests
+from botty.services.gohome import format_network_tests
 
 
 def test_format_network_tests_full_payload():

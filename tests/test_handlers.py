@@ -109,7 +109,7 @@ async def test_adguard_status_command(mock_run_command, mock_update, monkeypatch
 
 
 @pytest.mark.asyncio
-@patch("botty.http.httpx.AsyncClient")
+@patch("botty.services.http.httpx.AsyncClient")
 async def test_network_tests_command_success(MockAsyncClient, mock_update, monkeypatch):
     """Test the /network_tests command on a successful API call."""
     handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
@@ -165,7 +165,7 @@ async def test_network_tests_command_success(MockAsyncClient, mock_update, monke
 
 
 @pytest.mark.asyncio
-@patch("botty.http.httpx.AsyncClient")
+@patch("botty.services.http.httpx.AsyncClient")
 async def test_network_tests_command_failure(MockAsyncClient, mock_update, monkeypatch):
     """Test the /network_tests command on a failed API call."""
     handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]

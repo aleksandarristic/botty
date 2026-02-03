@@ -7,7 +7,7 @@ from botty.cmd.handlers import config as handler_config
 
 
 @pytest.mark.asyncio
-@patch("botty.http.httpx.AsyncClient")
+@patch("botty.services.http.httpx.AsyncClient")
 async def test_network_tests_integration(MockAsyncClient, monkeypatch):
     handler_config.authorized_user_ids = ["123"]
     handler_config.gohome_api_url = "http://stub/status"

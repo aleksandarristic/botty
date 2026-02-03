@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from botty.markdown import escape_markdown_code
+from botty.services.markdown import escape_markdown_code
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 import asyncio
 import os
-from botty.markdown import escape_markdown, escape_markdown_code
+from botty.services.markdown import escape_markdown, escape_markdown_code
 import subprocess
 import shutil
 from typing import List

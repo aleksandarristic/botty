@@ -5,8 +5,8 @@ import httpx
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from botty.gohome import GoHomeParseError, format_network_tests
-from botty.http import create_async_client
+from botty.services.gohome import GoHomeParseError, format_network_tests
+from botty.services.http import create_async_client
 from ..utils import escape_markdown
 from .base import Command
 
