@@ -2,6 +2,7 @@ import httpx
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from botty.http import create_async_client
 from ..utils import escape_markdown, escape_markdown_code
 from .base import Command
 
@@ -12,7 +13,7 @@ class NetworkTestsCommand(Command):
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Fetches the latest network test results."""
         try:
-            async with httpx.AsyncClient() as client:
+            async with create_async_client(self.config) as client:
                 response = await client.get(self.config.gohome_api_url)
                 response.raise_for_status()
                 data = response.json()
