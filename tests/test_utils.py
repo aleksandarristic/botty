@@ -6,7 +6,7 @@ from botty.cmd.utils import escape_markdown, escape_markdown_code, run_command
 @pytest.mark.asyncio
 async def test_run_command_success():
     """Test that run_command successfully executes a command and returns stdout."""
-    command = 'echo "hello test"'
+    command = ["echo", "hello test"]
     result = await run_command(command)
     assert result.strip() == "hello test"
 
@@ -14,7 +14,7 @@ async def test_run_command_success():
 @pytest.mark.asyncio
 async def test_run_command_failure():
     """Test that run_command captures stderr when a command fails."""
-    command = "ls non_existent_directory_for_testing"
+    command = ["ls", "non_existent_directory_for_testing"]
     result = await run_command(command)
     assert "Error:" in result
     assert "No such file or directory" in result
@@ -23,7 +23,7 @@ async def test_run_command_failure():
 @pytest.mark.asyncio
 async def test_run_command_timeout():
     """Test that run_command handles timeouts correctly."""
-    command = "sleep 2"
+    command = ["sleep", "2"]
     # Use a short timeout to trigger the exception
     result = await run_command(command, timeout=0.1)
     assert "Error: Command timed out after 0.1 seconds" in result

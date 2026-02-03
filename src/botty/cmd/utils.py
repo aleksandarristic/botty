@@ -1,11 +1,12 @@
 import asyncio
 import re
+from typing import List
 
 
-async def run_command(command: str, timeout: float = 10.0) -> str:
-    """Runs a shell command and returns the output, with an optional timeout."""
-    process = await asyncio.create_subprocess_shell(
-        command,
+async def run_command(command: List[str], timeout: float = 10.0) -> str:
+    """Runs a subprocess and returns the output, with an optional timeout."""
+    process = await asyncio.create_subprocess_exec(
+        *command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -15,7 +16,10 @@ async def run_command(command: str, timeout: float = 10.0) -> str:
             return f"Error: {stderr.decode(errors='replace')}"
         return stdout.decode(errors="replace")
     except asyncio.TimeoutError:
-        process.kill()
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
         await process.wait()
         return f"Error: Command timed out after {timeout} seconds"
 
@@ -23,6 +27,7 @@ async def run_command(command: str, timeout: float = 10.0) -> str:
 def escape_markdown(text: str) -> str:
     """Escapes special characters for Telegram MarkdownV2 (outside of code blocks)."""
     escape_chars = r"_*[]()~`>#+-=|{}.!"
+    # We need 3 backslashes in the file: r"\"
     return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 
 

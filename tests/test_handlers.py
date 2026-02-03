@@ -57,9 +57,9 @@ async def test_status_command(mock_run_command, mock_update, monkeypatch):
     await handlers.status_command(mock_update, None)
 
     assert mock_run_command.call_count == 3
-    mock_run_command.assert_any_call("uptime -p")
-    mock_run_command.assert_any_call("df -h /")
-    mock_run_command.assert_any_call("free -h")
+    mock_run_command.assert_any_call(["uptime", "-p"])
+    mock_run_command.assert_any_call(["df", "-h", "/"])
+    mock_run_command.assert_any_call(["free", "-h"])
 
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]
@@ -87,10 +87,10 @@ async def test_emby_status_command(mock_run_command, mock_update, monkeypatch):
     assert mock_run_command.call_count == 3
     # Check the exact command with flags and custom paths
     mock_run_command.assert_any_call(
-        "systemctl status emby-server.service --no-pager -n 0"
+        ["systemctl", "status", "emby-server.service", "--no-pager", "-n", "0"]
     )
-    mock_run_command.assert_any_call("df -h /fake/embydata")
-    mock_run_command.assert_any_call("df -h /fake/media")
+    mock_run_command.assert_any_call(["df", "-h", "/fake/embydata"])
+    mock_run_command.assert_any_call(["df", "-h", "/fake/media"])
 
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]
@@ -109,7 +109,7 @@ async def test_adguard_status_command(mock_run_command, mock_update, monkeypatch
     await handlers.adguard_status_command(mock_update, None)
 
     mock_run_command.assert_called_once_with(
-        "systemctl status AdGuardHome.service --no-pager -n 0"
+        ["systemctl", "status", "AdGuardHome.service", "--no-pager", "-n", "0"]
     )
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]

@@ -1,5 +1,4 @@
 import os
-import shlex
 from functools import wraps
 
 import httpx
@@ -39,6 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_html(
         rf"Hi {user.mention_html()}! Here are the available commands:"
         "\n/start - Shows this message"
+        "\n/help - Shows this message"
         "\n/status - General server health"
         "\n/emby_status - Emby media server status"
         "\n/adguard_status - AdGuard Home status"
@@ -49,9 +49,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 @authorized_only
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Provides a general server health check."""
-    uptime = await run_command("uptime -p")
-    disk_usage = await run_command("df -h /")
-    memory_usage = await run_command("free -h")
+    uptime = await run_command(["uptime", "-p"])
+    disk_usage = await run_command(["df", "-h", "/"])
+    memory_usage = await run_command(["free", "-h"])
 
     message = "*Server Status*\n\n"
     message += f"*Uptime:*\n```\n{escape_markdown_code(uptime)}\n```\n"
@@ -68,10 +68,10 @@ async def emby_status_command(
     """Checks the status of Emby media server."""
     # -n 0 suppresses logs to avoid "Message too long" and parsing issues with special chars in logs
     service_status = await run_command(
-        "systemctl status emby-server.service --no-pager -n 0"
+        ["systemctl", "status", "emby-server.service", "--no-pager", "-n", "0"]
     )
-    db_drive_status = await run_command(f"df -h {shlex.quote(EMBY_DATA_PATH)}")
-    media_drive_status = await run_command(f"df -h {shlex.quote(MEDIA_PATH)}")
+    db_drive_status = await run_command(["df", "-h", EMBY_DATA_PATH])
+    media_drive_status = await run_command(["df", "-h", MEDIA_PATH])
 
     message = "*Emby Media Server Status*\n\n"
     message += f"*Service Status:*\n```\n{escape_markdown_code(service_status)}\n```\n"
@@ -88,7 +88,7 @@ async def adguard_status_command(
     """Checks the status of AdGuard Home."""
     # -n 0 suppresses logs
     service_status = await run_command(
-        "systemctl status AdGuardHome.service --no-pager -n 0"
+        ["systemctl", "status", "AdGuardHome.service", "--no-pager", "-n", "0"]
     )
 
     message = (
@@ -160,9 +160,9 @@ async def network_tests_command(
                         f"*Ping:*\n```\n{escape_markdown_code(section.strip())}\n```\n"
                     )
                 else:
-                    message += "*Ping:*\n```\nNo targets found\n```\n"
+                    message += "*Ping:*\\n```\\nNo targets found\\n```\\n"
             else:
-                message += "*Ping:*\n```\nNo data available\n```\n"
+                message += "*Ping:*\\n```\\nNo data available\\n```\\n"
 
             # Device Section
             if device_data and device_data.get("Available"):
