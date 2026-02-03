@@ -26,7 +26,7 @@ async def test_start_command(mock_update, monkeypatch):
     mock_update.message.reply_html.assert_called_once()
     call_args = mock_update.message.reply_html.call_args[0][0]
     assert "Hi" in call_args
-    assert "/help" in call_args
+    assert "/start" in call_args
 
 
 @pytest.mark.asyncio
