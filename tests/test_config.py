@@ -1,0 +1,47 @@
+import os
+
+from botty.config import BottyConfig
+
+
+def test_config_defaults(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("AUTHORIZED_USER_ID", raising=False)
+    monkeypatch.delenv("GOHOME_API_URL", raising=False)
+    monkeypatch.delenv("GOHOME_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("EMBY_DATA_PATH", raising=False)
+    monkeypatch.delenv("MEDIA_PATH", raising=False)
+
+    config = BottyConfig.from_env()
+
+    assert config.telegram_bot_token is None
+    assert config.authorized_user_ids == []
+    assert config.gohome_api_url == "http://localhost:8080/status"
+    assert config.gohome_timeout_seconds == 10
+    assert config.emby_data_path == "/mnt/embydata"
+    assert config.media_path == "/mnt/media"
+
+
+def test_config_parses_authorized_users(monkeypatch):
+    monkeypatch.setenv("AUTHORIZED_USER_ID", "123, 456,789")
+
+    config = BottyConfig.from_env()
+
+    assert config.authorized_user_ids == ["123", "456", "789"]
+
+
+def test_config_custom_values(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setenv("AUTHORIZED_USER_ID", "999")
+    monkeypatch.setenv("GOHOME_API_URL", "http://example.local/status")
+    monkeypatch.setenv("GOHOME_TIMEOUT_SECONDS", "4.5")
+    monkeypatch.setenv("EMBY_DATA_PATH", "/data/emby")
+    monkeypatch.setenv("MEDIA_PATH", "/data/media")
+
+    config = BottyConfig.from_env()
+
+    assert config.telegram_bot_token == "token"
+    assert config.authorized_user_ids == ["999"]
+    assert config.gohome_api_url == "http://example.local/status"
+    assert config.gohome_timeout_seconds == 4.5
+    assert config.emby_data_path == "/data/emby"
+    assert config.media_path == "/data/media"
