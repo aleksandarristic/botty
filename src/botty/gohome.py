@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+import logging
+
 from botty.markdown import escape_markdown_code
+
+logger = logging.getLogger(__name__)
+
+
+class GoHomeParseError(ValueError):
+    """Raised when the GoHome payload cannot be parsed."""
 
 
 def format_network_tests(data: dict) -> str:
     """Format GoHome API response data into a MarkdownV2 message."""
+    if not isinstance(data, dict):
+        logger.warning("gohome.invalid_payload", extra={"payload_type": type(data)})
+        raise GoHomeParseError("GoHome payload must be a dict")
     # Safely extract data with checks
     speed_data = data.get("speedtest", {})
     ping_data = data.get("ping", {})

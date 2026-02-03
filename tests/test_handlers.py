@@ -129,6 +129,8 @@ async def test_network_tests_command_success(MockAsyncClient, mock_update, monke
     """Test the /network_tests command on a successful API call."""
     handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
     handler_config.gohome_api_url = "http://example.local/status"
+    network_tests_command._cache_timestamp = None
+    network_tests_command._cache_message = None
     mock_response = MagicMock()
     mock_response.json.return_value = {
         "speedtest": {
@@ -182,6 +184,8 @@ async def test_network_tests_command_success(MockAsyncClient, mock_update, monke
 async def test_network_tests_command_failure(MockAsyncClient, mock_update, monkeypatch):
     """Test the /network_tests command on a failed API call."""
     handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
+    network_tests_command._cache_timestamp = None
+    network_tests_command._cache_message = None
     mock_get = AsyncMock()
     mock_get.side_effect = Exception("Test API failure")
     MockAsyncClient.return_value.__aenter__.return_value.get = mock_get
