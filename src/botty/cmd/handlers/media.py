@@ -1,13 +1,8 @@
-import os
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from ..utils import escape_markdown, escape_markdown_code, run_command
 from .base import Command
-
-EMBY_DATA_PATH = os.getenv("EMBY_DATA_PATH", "/mnt/embydata")
-MEDIA_PATH = os.getenv("MEDIA_PATH", "/mnt/media")
 
 
 class EmbyStatusCommand(Command):
@@ -19,19 +14,19 @@ class EmbyStatusCommand(Command):
         service_status = await run_command(
             ["systemctl", "status", "emby-server.service", "--no-pager", "-n", "0"]
         )
-        db_drive_status = await run_command(["df", "-h", EMBY_DATA_PATH])
-        media_drive_status = await run_command(["df", "-h", MEDIA_PATH])
+        db_drive_status = await run_command(["df", "-h", self.config.emby_data_path])
+        media_drive_status = await run_command(["df", "-h", self.config.media_path])
 
         message = "*Emby Media Server Status*\n\n"
         message += (
             f"*Service Status:*\n```\n{escape_markdown_code(service_status)}\n```\n"
         )
         message += (
-            f"*Database Drive \\({escape_markdown(EMBY_DATA_PATH)}\\):*\n"
+            f"*Database Drive \\({escape_markdown(self.config.emby_data_path)}\\):*\n"
             f"```\n{escape_markdown_code(db_drive_status)}\n```\n"
         )
         message += (
-            f"*Media Drive \\({escape_markdown(MEDIA_PATH)}\\):*\n"
+            f"*Media Drive \\({escape_markdown(self.config.media_path)}\\):*\n"
             f"```\n{escape_markdown_code(media_drive_status)}\n```"
         )
 
@@ -55,4 +50,4 @@ class AdguardStatusCommand(Command):
         await update.message.reply_text(message, parse_mode="MarkdownV2")
 
 
-__all__ = ["EMBY_DATA_PATH", "MEDIA_PATH", "EmbyStatusCommand", "AdguardStatusCommand"]
+__all__ = ["EmbyStatusCommand", "AdguardStatusCommand"]

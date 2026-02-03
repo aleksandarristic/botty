@@ -1,10 +1,9 @@
 import logging
-import os
-
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler
 
 from botty.cmd import command_registry
+from botty.config import BottyConfig
 
 # Load environment variables from .env file
 load_dotenv()
@@ -14,15 +13,13 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
-# Get configuration from environment variables
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-AUTHORIZED_USER_ID = os.getenv("AUTHORIZED_USER_ID")
+config = BottyConfig.from_env()
 
 
 def main() -> None:
     """Start the bot."""
     # Create the Application and pass it your bot's token.
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application = Application.builder().token(config.telegram_bot_token).build()
 
     # Register all commands from the command registry
     for command_name, handler in command_registry:
@@ -35,7 +32,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    if not TELEGRAM_BOT_TOKEN or not AUTHORIZED_USER_ID:
+    if not config.telegram_bot_token or not config.authorized_user_ids:
         print(
             "Please set the TELEGRAM_BOT_TOKEN and AUTHORIZED_USER_ID environment variables."
         )

@@ -1,13 +1,9 @@
-import os
-
 import httpx
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from ..utils import escape_markdown, escape_markdown_code
 from .base import Command
-
-GOHOME_API_URL = os.getenv("GOHOME_API_URL", "http://localhost:8080/status")
 
 
 class NetworkTestsCommand(Command):
@@ -17,7 +13,7 @@ class NetworkTestsCommand(Command):
         """Fetches the latest network test results."""
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(GOHOME_API_URL)
+                response = await client.get(self.config.gohome_api_url)
                 response.raise_for_status()
                 data = response.json()
 
@@ -129,4 +125,4 @@ class NetworkTestsCommand(Command):
             )
 
 
-__all__ = ["GOHOME_API_URL", "NetworkTestsCommand"]
+__all__ = ["NetworkTestsCommand"]

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from botty.cmd.utils import is_authorized
+from botty.config import BottyConfig
 
 
 class Command(ABC):
@@ -9,9 +9,12 @@ class Command(ABC):
     name: str
     auth_required: bool = True
 
+    def __init__(self, config: BottyConfig) -> None:
+        self.config = config
+
     async def handle(self, update, context) -> None:
         """Shared entrypoint for command execution."""
-        if self.auth_required and not is_authorized(update):
+        if self.auth_required and not self.config.is_authorized(update):
             await update.message.reply_text(
                 "You are not authorized to use this command."
             )

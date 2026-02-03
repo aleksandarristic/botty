@@ -1,49 +1,7 @@
 import os
 import re
 import subprocess
-from functools import wraps
 from typing import List
-
-# Parse authorized user IDs from a comma-separated string
-auth_env = os.getenv("AUTHORIZED_USER_ID", "")
-AUTHORIZED_USER_IDS = [uid.strip() for uid in auth_env.split(",") if uid.strip()]
-
-
-def is_authorized(update) -> bool:
-    return str(update.effective_user.id) in AUTHORIZED_USER_IDS
-
-
-def _extract_update(args, kwargs):
-    if "update" in kwargs:
-        return kwargs["update"]
-    if not args:
-        return None
-    if hasattr(args[0], "effective_user"):
-        return args[0]
-    if len(args) > 1 and hasattr(args[1], "effective_user"):
-        return args[1]
-    return None
-
-
-def authorized_only(func):
-    """Decorator to restrict access to authorized users only."""
-
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        # Support both functions (update, context) and bound methods (self, update, context).
-        update = _extract_update(args, kwargs)
-        if update is None:
-            raise TypeError("authorized_only could not find Update argument")
-
-        user_id = str(update.effective_user.id)
-        if user_id not in AUTHORIZED_USER_IDS:
-            await update.message.reply_text(
-                "You are not authorized to use this command."
-            )
-            return
-        return await func(*args, **kwargs)
-
-    return wrapper
 
 
 async def run_command(command: List[str], timeout: float = 10.0) -> str:
