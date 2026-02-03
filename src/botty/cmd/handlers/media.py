@@ -1,3 +1,4 @@
+import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -11,11 +12,13 @@ class EmbyStatusCommand(Command):
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Checks the status of Emby media server."""
         # -n 0 suppresses logs to avoid "Message too long" and parsing issues with special chars in logs
-        service_status = await run_command(
-            ["systemctl", "status", "emby-server.service", "--no-pager", "-n", "0"]
+        service_status, db_drive_status, media_drive_status = await asyncio.gather(
+            run_command(
+                ["systemctl", "status", "emby-server.service", "--no-pager", "-n", "0"]
+            ),
+            run_command(["df", "-h", self.config.emby_data_path]),
+            run_command(["df", "-h", self.config.media_path]),
         )
-        db_drive_status = await run_command(["df", "-h", self.config.emby_data_path])
-        media_drive_status = await run_command(["df", "-h", self.config.media_path])
 
         message = "*Emby Media Server Status*\n\n"
         message += (

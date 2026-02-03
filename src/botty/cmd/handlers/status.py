@@ -1,3 +1,4 @@
+import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -27,9 +28,11 @@ class StatusCommand(Command):
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Provides a general server health check."""
-        uptime = await run_command(["uptime", "-p"])
-        disk_usage = await run_command(["df", "-h", "/"])
-        memory_usage = await run_command(["free", "-h"])
+        uptime, disk_usage, memory_usage = await asyncio.gather(
+            run_command(["uptime", "-p"]),
+            run_command(["df", "-h", "/"]),
+            run_command(["free", "-h"]),
+        )
 
         message = "*Server Status*\n\n"
         message += f"*Uptime:*\n```\n{escape_markdown_code(uptime)}\n```\n"
