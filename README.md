@@ -57,7 +57,7 @@ Service installations store these values in `botty.env`, whereas `.env` is used 
 
 ## Commands
 
-All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py` and protected by the `@authorized_only` decorator.
+All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py`. Authorization is enforced in the `Command` base class; most commands require authorization, while `/start` is public.
 
 - `/start`: list the available commands and remind the user of the current UI.
 - `/status`: reports uptime, memory, and disk usage gathered from `uptime`, `free`, and `df`.
@@ -65,7 +65,7 @@ All commands are registered dynamically via the `command_registry` in `src/botty
 - `/adguard_status`: fetches `systemctl status AdGuardHome`.
 - `/network_tests`: queries the GoHome API and formats speedtest stats, ping targets, and device metrics (temperature, memory, load averages, uptime) inside fenced MarkdownV2 code blocks.
 
-Every textual reply is sanitized with `escape_markdown` / `escape_markdown_code` helpers in `src/botty/cmd/utils.py` to stay compatible with Telegram MarkdownV2.
+Every textual reply is sanitized with `escape_markdown` / `escape_markdown_code` helpers in `src/botty/utils.py` to stay compatible with Telegram MarkdownV2.
 
 ## Testing
 
@@ -78,7 +78,9 @@ pytest
 ## Structure
 
 - `src/botty/main.py`: entry point invoked by the `botty` console script defined in `pyproject.toml`.
-- `src/botty/cmd/{handlers,utils}.py`: command implementations, helpers, and the `command_registry`.
+- `src/botty/utils.py`: command helpers (shell execution + Markdown escaping).
+- `src/botty/services/`: GoHome formatting, HTTP client setup, and system check adapters.
+- `src/botty/cmd/handlers/`: command implementations and the `command_registry` in `src/botty/cmd/__init__.py`.
 - `tests/`: handler and utility tests.
 - `install.sh`: produces the `.venv` installation, configuration file, and systemd unit.
 - `.env.example`: template for local development secrets.
