@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from botty.cmd.utils import escape_markdown_code
+from botty.markdown import escape_markdown_code
 
 
 def format_network_tests(data: dict) -> str:
