@@ -2,7 +2,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from botty.cmd import handlers
+from botty.cmd import utils
+from botty.cmd.handlers import (
+    adguard_status_command,
+    emby_status_command,
+    network_tests_command,
+    start_command,
+    status_command,
+)
+from botty.cmd.handlers import media as media_module
+from botty.cmd.handlers import network as network_module
 
 # Set a consistent authorized user ID for testing
 TEST_AUTHORIZED_USER_ID = "12345"
@@ -20,9 +29,9 @@ def mock_update():
 
 @pytest.mark.asyncio
 async def test_start_command(mock_update, monkeypatch):
-    monkeypatch.setattr(handlers, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
+    monkeypatch.setattr(utils, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
     """Test the /start command handler."""
-    await handlers.start(mock_update, None)
+    await start_command.handle(mock_update, None)
     mock_update.message.reply_html.assert_called_once()
     call_args = mock_update.message.reply_html.call_args[0][0]
     assert "Hi" in call_args
@@ -32,11 +41,11 @@ async def test_start_command(mock_update, monkeypatch):
 @pytest.mark.asyncio
 async def test_unauthorized_user(mock_update, monkeypatch):
     """Test that an unauthorized user is rejected."""
-    monkeypatch.setattr(handlers, "AUTHORIZED_USER_IDS", ["a_different_id"])
+    monkeypatch.setattr(utils, "AUTHORIZED_USER_IDS", ["a_different_id"])
     mock_update.effective_user.id = 99999  # Unauthorized ID
 
     # We can test any command that has the auth check
-    await handlers.status_command(mock_update, None)
+    await status_command.handle(mock_update, None)
 
     mock_update.message.reply_text.assert_called_once_with(
         "You are not authorized to use this command."
@@ -44,17 +53,17 @@ async def test_unauthorized_user(mock_update, monkeypatch):
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.run_command")
+@patch("botty.cmd.handlers.status.run_command")
 async def test_status_command(mock_run_command, mock_update, monkeypatch):
     """Test the /status command handler."""
-    monkeypatch.setattr(handlers, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
+    monkeypatch.setattr(utils, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
     mock_run_command.side_effect = [
         "up 2 days",
         "disk usage /",
         "memory usage",
     ]
 
-    await handlers.status_command(mock_update, None)
+    await status_command.handle(mock_update, None)
 
     assert mock_run_command.call_count == 3
     mock_run_command.assert_any_call(["uptime", "-p"])
@@ -69,12 +78,12 @@ async def test_status_command(mock_run_command, mock_update, monkeypatch):
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.run_command")
+@patch("botty.cmd.handlers.media.run_command")
 async def test_emby_status_command(mock_run_command, mock_update, monkeypatch):
     """Test the /emby_status command handler."""
-    monkeypatch.setattr(handlers, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
-    monkeypatch.setattr(handlers, "EMBY_DATA_PATH", "/fake/embydata")
-    monkeypatch.setattr(handlers, "MEDIA_PATH", "/fake/media")
+    monkeypatch.setattr(utils, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
+    monkeypatch.setattr(media_module, "EMBY_DATA_PATH", "/fake/embydata")
+    monkeypatch.setattr(media_module, "MEDIA_PATH", "/fake/media")
 
     mock_run_command.side_effect = [
         "emby is running",
@@ -82,7 +91,7 @@ async def test_emby_status_command(mock_run_command, mock_update, monkeypatch):
         "media usage",
     ]
 
-    await handlers.emby_status_command(mock_update, None)
+    await emby_status_command.handle(mock_update, None)
 
     assert mock_run_command.call_count == 3
     # Check the exact command with flags and custom paths
@@ -100,13 +109,13 @@ async def test_emby_status_command(mock_run_command, mock_update, monkeypatch):
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.run_command")
+@patch("botty.cmd.handlers.media.run_command")
 async def test_adguard_status_command(mock_run_command, mock_update, monkeypatch):
     """Test the /adguard_status command handler."""
-    monkeypatch.setattr(handlers, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
+    monkeypatch.setattr(utils, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
     mock_run_command.return_value = "adguard is running"
 
-    await handlers.adguard_status_command(mock_update, None)
+    await adguard_status_command.handle(mock_update, None)
 
     mock_run_command.assert_called_once_with(
         ["systemctl", "status", "AdGuardHome.service", "--no-pager", "-n", "0"]
@@ -117,10 +126,10 @@ async def test_adguard_status_command(mock_run_command, mock_update, monkeypatch
 
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient")
+@patch("botty.cmd.handlers.network.httpx.AsyncClient")
 async def test_network_tests_command_success(MockAsyncClient, mock_update, monkeypatch):
     """Test the /network_tests command on a successful API call."""
-    monkeypatch.setattr(handlers, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
+    monkeypatch.setattr(utils, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
     mock_response = MagicMock()
     mock_response.json.return_value = {
         "speedtest": {
@@ -153,9 +162,9 @@ async def test_network_tests_command_success(MockAsyncClient, mock_update, monke
     mock_get = AsyncMock(return_value=mock_response)
     MockAsyncClient.return_value.__aenter__.return_value.get = mock_get
 
-    await handlers.network_tests_command(mock_update, None)
+    await network_tests_command.handle(mock_update, None)
 
-    mock_get.assert_called_once_with(handlers.GOHOME_API_URL)
+    mock_get.assert_called_once_with(network_module.GOHOME_API_URL)
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]
 
@@ -170,15 +179,15 @@ async def test_network_tests_command_success(MockAsyncClient, mock_update, monke
 
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient")
+@patch("botty.cmd.handlers.network.httpx.AsyncClient")
 async def test_network_tests_command_failure(MockAsyncClient, mock_update, monkeypatch):
     """Test the /network_tests command on a failed API call."""
-    monkeypatch.setattr(handlers, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
+    monkeypatch.setattr(utils, "AUTHORIZED_USER_IDS", [TEST_AUTHORIZED_USER_ID])
     mock_get = AsyncMock()
     mock_get.side_effect = Exception("Test API failure")
     MockAsyncClient.return_value.__aenter__.return_value.get = mock_get
 
-    await handlers.network_tests_command(mock_update, None)
+    await network_tests_command.handle(mock_update, None)
 
     mock_update.message.reply_text.assert_called_once_with(
         "An error occurred: Test API failure", parse_mode="MarkdownV2"

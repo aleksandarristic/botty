@@ -1,0 +1,132 @@
+import os
+
+import httpx
+from telegram import Update
+from telegram.ext import ContextTypes
+
+from ..utils import escape_markdown, escape_markdown_code
+from .base import Command
+
+GOHOME_API_URL = os.getenv("GOHOME_API_URL", "http://localhost:8080/status")
+
+
+class NetworkTestsCommand(Command):
+    name = "network_tests"
+
+    async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Fetches the latest network test results."""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(GOHOME_API_URL)
+                response.raise_for_status()
+                data = response.json()
+
+                # Safely extract data with checks
+                speed_data = data.get("speedtest", {})
+                ping_data = data.get("ping", {})
+                device_data = data.get("device", {})
+
+                message = "*Network Test Results*\n\n"
+
+                # Speedtest Section
+                if speed_data and speed_data.get("Available"):
+                    dl = speed_data.get("DownloadMbps")
+                    ul = speed_data.get("UploadMbps")
+                    ping = speed_data.get("PingMs")
+                    last_updated = speed_data.get("LastUpdatedText", "N/A")
+                    next_run = speed_data.get("NextScheduledISO", "N/A")
+
+                    dl_str = f"{dl:.2f}" if isinstance(dl, (int, float)) else "N/A"
+                    ul_str = f"{ul:.2f}" if isinstance(ul, (int, float)) else "N/A"
+                    ping_str = f"{ping}" if ping is not None else "N/A"
+
+                    section = f"Download: {dl_str} Mbps\n"
+                    section += f"Upload:   {ul_str} Mbps\n"
+                    section += f"Ping:     {ping_str} ms\n"
+                    section += f"Updated:  {last_updated}\n"
+                    section += f"Next Run: {next_run}"
+
+                    message += (
+                        f"*Speedtest:*\n```\n{escape_markdown_code(section)}\n```\n"
+                    )
+                else:
+                    message += "*Speedtest:*\n```\nNo data available\n```\n"
+
+                # Ping Section
+                if ping_data and ping_data.get("Available"):
+                    targets = ping_data.get("Targets", [])
+                    if targets:
+                        section = ""
+                        for target in targets:
+                            name = target.get("Name", "Unknown")
+                            avg = target.get("AvgMs")
+                            loss = target.get("PacketLoss")
+
+                            avg_str = (
+                                f"{avg:.2f}" if isinstance(avg, (int, float)) else "N/A"
+                            )
+                            loss_str = f"{loss}" if loss is not None else "N/A"
+
+                            section += f"{name[:15]:<15}: {avg_str:>6} ms (Loss: {loss_str:>3}%)\n"
+                        message += f"*Ping:*\n```\n{escape_markdown_code(section.strip())}\n```\n"
+                    else:
+                        message += "*Ping:*\\n```\\nNo targets found\\n```\\n"
+                else:
+                    message += "*Ping:*\\n```\\nNo data available\\n```\\n"
+
+                # Device Section
+                if device_data and device_data.get("Available"):
+                    temp = device_data.get("TemperatureC")
+                    uptime = device_data.get("UptimeText")
+                    mem_used = device_data.get("MemoryUsedMB")
+                    mem_total = device_data.get("MemoryTotalMB")
+                    load_1 = device_data.get("Load1")
+                    load_5 = device_data.get("Load5")
+                    load_15 = device_data.get("Load15")
+
+                    temp_str = f"{temp}" if temp is not None else "N/A"
+                    uptime_str = uptime if uptime else "N/A"
+
+                    if isinstance(mem_used, (int, float)) and isinstance(
+                        mem_total, (int, float)
+                    ):
+                        mem_str = (
+                            f"{mem_used / 1024:.2f}/{mem_total / 1024:.2f} GB used"
+                        )
+                    else:
+                        mem_str = "N/A"
+
+                    load_str = (
+                        f"{load_1:.2f}, {load_5:.2f}, {load_15:.2f}"
+                        if all(
+                            isinstance(load, (int, float))
+                            for load in [load_1, load_5, load_15]
+                        )
+                        else "N/A"
+                    )
+
+                    section = f"CPU Temp: {temp_str}°C\n"
+                    section += f"Memory:   {mem_str}\n"
+                    section += f"Loads:    {load_str}\n"
+                    section += f"Uptime:   {uptime_str}"
+
+                    message += (
+                        f"*Device Metrics:*\n```\n{escape_markdown_code(section)}\n```"
+                    )
+                else:
+                    message += "*Device Metrics:*\n```\nNo data available\n```"
+
+                await update.message.reply_text(message, parse_mode="MarkdownV2")
+
+        except httpx.RequestError as e:
+            await update.message.reply_text(
+                f"Could not connect to the GoHome API: {escape_markdown(str(e))}",
+                parse_mode="MarkdownV2",
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                f"An error occurred: {escape_markdown(str(e))}", parse_mode="MarkdownV2"
+            )
+
+
+__all__ = ["GOHOME_API_URL", "NetworkTestsCommand"]
