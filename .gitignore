@@ -23,3 +23,5 @@ instructions/tasks/*
 AGENTS.md
 GEMINI.md
 .gemini
+.codex
+.claude
