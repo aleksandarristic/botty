@@ -30,6 +30,8 @@ async def test_check_updates_command(mock_update, mock_context):
         assert "Available Updates" in args[0]
         assert "python3/stable" in args[0]
         assert "Listing..." not in args[0]
+        assert "3.11.0" in args[0]
+        assert "3.12.0" in args[0]
 
 @pytest.mark.asyncio
 async def test_upgrade_bot_command_no_confirm(mock_update, mock_context):

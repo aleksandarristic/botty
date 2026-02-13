@@ -68,6 +68,7 @@ Run the bot locally with `botty`.
 - `ENABLED_COMMANDS`: optional comma-separated list of command names to enable (e.g., `status,network_tests`). If omitted, all commands are enabled. `/start` is always enabled.
 - `GOHOME_API_URL`: endpoint for network results (default `http://localhost:8080/status`).
 - `EMBY_DATA_PATH` / `MEDIA_PATH`: paths used for drive checks; defaults `/mnt/embydata` and `/mnt/media`.
+- `TELEGRAM_POLL_TIMEOUT_SECONDS`: Telegram long-poll timeout in seconds (default `300`; increase to reduce poll-frequency log noise).
 - `BOTTY_SERVICE_ALLOWLIST`: comma-separated service names allowed for `/service` and `/logs` sudo policy (for example `botty,nginx`).
 - `BOTTY_SUDO_PASSWORD`: optional sudo password used for privileged commands when command handlers enable `sudo=True`.
 

@@ -38,6 +38,14 @@ async def test_run_command_failure():
 
 
 @pytest.mark.asyncio
+async def test_run_command_missing_executable():
+    """Test missing executable returns a safe error string (no exception)."""
+    result = await run_command(["__definitely_missing_binary__"])
+    assert "Error:" in result
+    assert "No such file or directory" in result
+
+
+@pytest.mark.asyncio
 async def test_run_command_timeout():
     """Test that run_command handles timeouts correctly."""
     command = ["sleep", "2"]

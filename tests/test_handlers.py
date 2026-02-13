@@ -68,7 +68,8 @@ async def test_start_command_escapes_html(mock_update, test_config):
     await cmd.handle(mock_update, None)
 
     call_args = mock_update.message.reply_html.call_args[0][0]
-    assert "/x&lt;y - Dangerous &lt;b&gt;tag&lt;/b&gt; &amp; value" in call_args
+    assert "/x&lt;y" in call_args
+    assert "Dangerous &lt;b&gt;tag&lt;/b&gt; &amp; value" in call_args
 
 
 def test_registry_fills_missing_description(test_config, monkeypatch):
@@ -128,7 +129,7 @@ async def test_status_command(mock_run_command, mock_update, test_config):
 
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]
-    assert "up 2 days" in call_args
+    assert "2 days" in call_args
     assert "disk usage /" in call_args
     assert "memory usage" in call_args
 

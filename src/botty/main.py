@@ -28,7 +28,9 @@ def main() -> None:
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(
-        timeout=60, allowed_updates=["message"], drop_pending_updates=True
+        timeout=config.telegram_poll_timeout_seconds,
+        allowed_updates=["message"],
+        drop_pending_updates=True,
     )
 
 

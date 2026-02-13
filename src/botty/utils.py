@@ -37,13 +37,16 @@ async def run_command(
     stdin = asyncio.subprocess.PIPE if use_sudo_stdin else asyncio.subprocess.DEVNULL
     sudo_input = f"{sudo_password}\n".encode() if use_sudo_stdin else None
 
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        stdin=stdin,
-        env=env,
-    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=stdin,
+            env=env,
+        )
+    except FileNotFoundError as exc:
+        return f"Error: {exc}"
     timed_out = False
     try:
         stdout, stderr = await asyncio.wait_for(

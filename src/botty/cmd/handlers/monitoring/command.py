@@ -10,6 +10,7 @@ from botty.utils import escape_markdown_code, run_command, escape_markdown
 class TopCommand(Command):
     name = "top"
     description = "Show top CPU consuming processes"
+    max_rows: int = 15
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -32,8 +33,8 @@ class TopCommand(Command):
              output = await run_command(cmd)
 
         lines = output.splitlines()
-        # Header + top 5
-        top_lines = lines[:6]
+        # Header + top N rows
+        top_lines = lines[: self.max_rows + 1]
         
         formatted_output = "\n".join(top_lines)
         

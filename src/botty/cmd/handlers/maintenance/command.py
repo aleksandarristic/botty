@@ -1,13 +1,38 @@
+import re
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from botty.cmd.handlers.base import Command
-from botty.utils import escape_markdown_code
+from botty.utils import escape_markdown, escape_markdown_code
 
 
 class CheckUpdatesCommand(Command):
     name = "check_updates"
     description = "Check for system updates (apt)"
+
+    max_display_updates: int = 25
+
+    @staticmethod
+    def _parse_upgradable_packages(raw_output: str) -> list[tuple[str, str, str]]:
+        entries: list[tuple[str, str, str]] = []
+        pattern = re.compile(
+            r"^(?P<pkg>\S+)\s+(?P<new>\S+)\s+\S+\s+\[upgradable from:\s*(?P<old>[^\]]+)\]$"
+        )
+        for line in raw_output.splitlines():
+            line = line.strip()
+            if (
+                not line
+                or line == "Listing..."
+                or line.startswith("WARNING:")
+                or line.startswith("Use with caution")
+            ):
+                continue
+            match = pattern.match(line)
+            if not match:
+                continue
+            entries.append((match.group("pkg"), match.group("old"), match.group("new")))
+        return entries
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -24,20 +49,33 @@ class CheckUpdatesCommand(Command):
         
         cmd = ["apt", "list", "--upgradable"]
         output = await self._run_command(cmd)
-        
-        if "Listing..." in output:
-             lines = output.splitlines()
-             # Filter out "Listing..."
-             lines = [line for line in lines if line != "Listing..."]
-             output = "\n".join(lines)
 
-        if not output.strip():
-             output = "No updates found."
-             
-        await self._reply_markdown(
-            reply_message,
-            f"*Available Updates*\n```\n{escape_markdown_code(output)}\n```"
-        )
+        if output.strip().lower().startswith("error:"):
+            await self._reply_markdown(
+                reply_message,
+                "*Available Updates*\n"
+                "Could not query apt updates on this host.\n"
+                f"```\n{escape_markdown_code(output)}\n```",
+            )
+            return
+
+        entries = self._parse_upgradable_packages(output)
+        if not entries:
+            await self._reply_markdown(reply_message, "*Available Updates*\nNo updates found\\.")
+            return
+
+        shown = entries[: self.max_display_updates]
+        message = f"*Available Updates* \\({len(entries)}\\)\n"
+        for pkg, old, new in shown:
+            message += (
+                f"\\- `{escape_markdown_code(pkg)}`: "
+                f"`{escape_markdown_code(old)}` → `{escape_markdown_code(new)}`\n"
+            )
+        if len(entries) > len(shown):
+            remaining = len(entries) - len(shown)
+            message += f"\\- _and {escape_markdown(str(remaining))} more_"
+
+        await self._reply_markdown(reply_message, message.rstrip())
 
 
 class UpgradeBotCommand(Command):

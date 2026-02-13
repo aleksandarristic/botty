@@ -14,6 +14,7 @@ class BottyConfig:
     gohome_timeout_seconds: float
     emby_data_path: str
     media_path: str
+    telegram_poll_timeout_seconds: float = 300.0
 
     @classmethod
     def from_env(cls) -> "BottyConfig":
@@ -38,6 +39,9 @@ class BottyConfig:
             gohome_timeout_seconds=float(os.getenv("GOHOME_TIMEOUT_SECONDS", "10")),
             emby_data_path=os.getenv("EMBY_DATA_PATH", "/mnt/embydata"),
             media_path=os.getenv("MEDIA_PATH", "/mnt/media"),
+            telegram_poll_timeout_seconds=float(
+                os.getenv("TELEGRAM_POLL_TIMEOUT_SECONDS", "300")
+            ),
         )
 
     def is_authorized(self, update: Update) -> bool:
