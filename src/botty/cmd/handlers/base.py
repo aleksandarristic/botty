@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 import logging
+import re
 
 from telegram import Message, Update
 from telegram.error import BadRequest
 
 from botty.config import BottyConfig
-from botty.utils import run_command
+from botty.utils import run_command, verify_totp
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class Command(ABC):
     description: str
     auth_required: bool = True
     sudo: bool = False
+    requires_totp: bool = False
 
     def __init__(self, config: BottyConfig) -> None:
         self.config = config
@@ -54,6 +56,27 @@ class Command(ABC):
             return
         if message is None:
             return
+        if self.requires_totp_for(update, context):
+            if not self.config.totp_secret:
+                await message.reply_text(
+                    "TOTP is not configured. Set TOTP_SECRET to use this command."
+                )
+                return
+
+            code = self._extract_totp_from_context(context)
+            if code is None:
+                await message.reply_text(
+                    "TOTP required. Append a 6-digit code as the last command argument."
+                )
+                return
+
+            if not verify_totp(
+                code,
+                self.config.totp_secret,
+                window_steps=self.config.totp_window_steps,
+            ):
+                await message.reply_text("Invalid or expired TOTP code.")
+                return
         try:
             await self.run(update, context)
         except Exception:
@@ -77,6 +100,21 @@ class Command(ABC):
     async def run(self, update: Update, context) -> None:
         """Implement command behavior."""
         raise NotImplementedError
+
+    def requires_totp_for(self, update: Update, context) -> bool:
+        return self.requires_totp
+
+    def _extract_totp_from_context(self, context) -> str | None:
+        args = getattr(context, "args", None)
+        if not isinstance(args, list) or not args:
+            return None
+        candidate = args[-1]
+        if not isinstance(candidate, str):
+            return None
+        candidate = candidate.strip()
+        if not re.fullmatch(r"\d{6}", candidate):
+            return None
+        return candidate
 
     @property
     def handler(self):

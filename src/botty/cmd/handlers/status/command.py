@@ -12,7 +12,6 @@ from .checks import get_status_checks
 class StartCommand(Command):
     name = "start"
     description = "Shows this message"
-    auth_required = False
     _section_order = [
         ("Core", {"start", "status"}),
         ("Control", {"service", "reboot", "logs"}),

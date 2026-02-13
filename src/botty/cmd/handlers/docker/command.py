@@ -83,6 +83,7 @@ class DockerListCommand(Command):
 class DockerRestartCommand(Command):
     name = "docker_restart"
     description = "Restart a docker container"
+    requires_totp = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """

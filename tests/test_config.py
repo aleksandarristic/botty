@@ -9,6 +9,8 @@ def test_config_defaults(monkeypatch):
     monkeypatch.delenv("GOHOME_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("EMBY_DATA_PATH", raising=False)
     monkeypatch.delenv("MEDIA_PATH", raising=False)
+    monkeypatch.delenv("TOTP_SECRET", raising=False)
+    monkeypatch.delenv("TOTP_WINDOW_STEPS", raising=False)
 
     config = BottyConfig.from_env()
 
@@ -18,6 +20,8 @@ def test_config_defaults(monkeypatch):
     assert config.gohome_timeout_seconds == 10
     assert config.emby_data_path == "/mnt/embydata"
     assert config.media_path == "/mnt/media"
+    assert config.totp_secret is None
+    assert config.totp_window_steps == 1
 
 
 def test_config_parses_authorized_users(monkeypatch):
@@ -35,6 +39,8 @@ def test_config_custom_values(monkeypatch):
     monkeypatch.setenv("GOHOME_TIMEOUT_SECONDS", "4.5")
     monkeypatch.setenv("EMBY_DATA_PATH", "/data/emby")
     monkeypatch.setenv("MEDIA_PATH", "/data/media")
+    monkeypatch.setenv("TOTP_SECRET", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setenv("TOTP_WINDOW_STEPS", "2")
 
     config = BottyConfig.from_env()
 
@@ -44,6 +50,8 @@ def test_config_custom_values(monkeypatch):
     assert config.gohome_timeout_seconds == 4.5
     assert config.emby_data_path == "/data/emby"
     assert config.media_path == "/data/media"
+    assert config.totp_secret == "JBSWY3DPEHPK3PXP"
+    assert config.totp_window_steps == 2
 
 
 def test_config_enabled_commands_unset_means_all(monkeypatch):

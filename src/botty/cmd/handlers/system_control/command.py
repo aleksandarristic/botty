@@ -61,11 +61,18 @@ class ServiceCommand(Command):
             f"*Service {action.capitalize()}*\n```\n{escape_markdown_code(output)}\n```"
         )
 
+    def requires_totp_for(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        if not context.args or len(context.args) < 2:
+            return False
+        action = context.args[1].lower()
+        return action in {"start", "stop", "restart"}
+
 
 class RebootCommand(Command):
     name = "reboot"
     description = "Reboot the server"
     sudo = True
+    requires_totp = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """

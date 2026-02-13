@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from botty.utils import escape_markdown, escape_markdown_code, run_command
+from botty.utils import escape_markdown, escape_markdown_code, run_command, verify_totp
 
 
 class _FakeProcess:
@@ -118,3 +118,15 @@ def test_escape_markdown_code():
     text_with_specials = r"Path: C:\Windows\System32 `code`"
     expected = r"Path: C:\\Windows\\System32 \`code\`"
     assert escape_markdown_code(text_with_specials) == expected
+
+
+def test_verify_totp_accepts_valid_code():
+    # RFC6238 test secret (base32). At t=59, SHA1 8-digit is 94287082, so 6-digit is 287082.
+    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    assert verify_totp("287082", secret, at_time=59, window_steps=0) is True
+
+
+def test_verify_totp_rejects_invalid_code_and_secret():
+    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    assert verify_totp("000000", secret, at_time=59, window_steps=0) is False
+    assert verify_totp("287082", "not-base32", at_time=59, window_steps=0) is False

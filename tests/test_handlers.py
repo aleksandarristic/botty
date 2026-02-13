@@ -30,6 +30,7 @@ def test_config():
         gohome_timeout_seconds=10.0,
         emby_data_path="/mnt/embydata",
         media_path="/mnt/media",
+        totp_secret="JBSWY3DPEHPK3PXP",
     )
 
 
@@ -70,6 +71,18 @@ async def test_start_command_escapes_html(mock_update, test_config):
     call_args = mock_update.message.reply_html.call_args[0][0]
     assert "/x&lt;y" in call_args
     assert "Dangerous &lt;b&gt;tag&lt;/b&gt; &amp; value" in call_args
+
+
+@pytest.mark.asyncio
+async def test_start_command_requires_authorized_user(mock_update, test_config):
+    test_config.authorized_user_ids = ["999999"]
+    cmd = StartCommand(test_config, [])
+    await cmd.handle(mock_update, None)
+
+    mock_update.message.reply_text.assert_called_once_with(
+        "You are not authorized to use this command."
+    )
+    mock_update.message.reply_html.assert_not_called()
 
 
 def test_registry_fills_missing_description(test_config, monkeypatch):
@@ -305,3 +318,72 @@ async def test_docker_status_without_directory(mock_run_command, mock_update, te
     mock_run_command.assert_called_once_with(["docker", "info"])
     call_args = mock_update.message.reply_text.call_args[0][0]
     assert "Not requested. Pass a directory or compose file path." in call_args
+
+
+@pytest.mark.asyncio
+async def test_requires_totp_missing_code_blocks_command(mock_update, test_config):
+    class MutatingCommand(Command):
+        name = "mutating"
+        description = "mutating command"
+        requires_totp = True
+
+        async def run(self, update, context):
+            raise AssertionError("run should not execute without a TOTP")
+
+    context = MagicMock()
+    context.args = []
+    cmd = MutatingCommand(test_config)
+    await cmd.handle(mock_update, context)
+
+    mock_update.message.reply_text.assert_called_once_with(
+        "TOTP required. Append a 6-digit code as the last command argument."
+    )
+
+
+@pytest.mark.asyncio
+@patch("botty.cmd.handlers.base.verify_totp")
+async def test_requires_totp_invalid_code_blocks_command(
+    mock_verify_totp, mock_update, test_config
+):
+    class MutatingCommand(Command):
+        name = "mutating"
+        description = "mutating command"
+        requires_totp = True
+
+        async def run(self, update, context):
+            raise AssertionError("run should not execute with an invalid TOTP")
+
+    mock_verify_totp.return_value = False
+    context = MagicMock()
+    context.args = ["123456"]
+    cmd = MutatingCommand(test_config)
+    await cmd.handle(mock_update, context)
+
+    mock_verify_totp.assert_called_once()
+    mock_update.message.reply_text.assert_called_once_with("Invalid or expired TOTP code.")
+
+
+@pytest.mark.asyncio
+@patch("botty.cmd.handlers.base.verify_totp")
+async def test_requires_totp_valid_code_allows_command(
+    mock_verify_totp, mock_update, test_config
+):
+    class MutatingCommand(Command):
+        name = "mutating"
+        description = "mutating command"
+        requires_totp = True
+
+        def __init__(self, config):
+            super().__init__(config)
+            self.executed = False
+
+        async def run(self, update, context):
+            self.executed = True
+
+    mock_verify_totp.return_value = True
+    context = MagicMock()
+    context.args = ["123456"]
+    cmd = MutatingCommand(test_config)
+    await cmd.handle(mock_update, context)
+
+    assert cmd.executed is True

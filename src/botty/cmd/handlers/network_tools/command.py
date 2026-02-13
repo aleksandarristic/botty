@@ -43,6 +43,7 @@ class PingCommand(Command):
 class WolCommand(Command):
     name = "wol"
     description = "Send Wake-on-LAN magic packet"
+    requires_totp = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """

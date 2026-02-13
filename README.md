@@ -69,20 +69,35 @@ Run the bot locally with `botty`.
 - `GOHOME_API_URL`: endpoint for network results (default `http://localhost:8080/status`).
 - `EMBY_DATA_PATH` / `MEDIA_PATH`: paths used for drive checks; defaults `/mnt/embydata` and `/mnt/media`.
 - `TELEGRAM_POLL_TIMEOUT_SECONDS`: Telegram long-poll timeout in seconds (default `300`; increase to reduce poll-frequency log noise).
+- `TOTP_SECRET`: base32 TOTP secret used to confirm state-changing commands.
+- `TOTP_WINDOW_STEPS`: allowed TOTP clock drift in 30-second steps (default `1`).
 - `BOTTY_SERVICE_ALLOWLIST`: comma-separated service names allowed for `/service` and `/logs` sudo policy (for example `botty,nginx`).
 - `BOTTY_SUDO_PASSWORD`: optional sudo password used for privileged commands when command handlers enable `sudo=True`.
 
 Service installations store these values in `botty.env`, whereas `.env` is used during manual runs. Keep `botty.env` private and out of version control.
 
+### TOTP Setup
+
+1. Generate a Base32 secret:
+   ```bash
+   python3 - <<'PY'
+   import secrets, base64
+   print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))
+   PY
+   ```
+2. Set `TOTP_SECRET` (and optionally `TOTP_WINDOW_STEPS`) in `botty.env` or `.env`.
+3. Add the same secret to your authenticator app (6 digits, 30s period, SHA1).
+4. Restart bot service/process.
+
 ## Existing Commands
 
-All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py`. Authorization is enforced in the `Command` base class; most commands require authorization, while `/start` is public.
+All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py`. Authorization is enforced in the `Command` base class for every command, including `/start`.
 
 ### System & Control
 - `/start`: List the available commands.
 - `/status`: Reports uptime, memory, and disk usage.
-- `/service <name> <action>`: Manage system services (`start`, `stop`, `restart`, `status`). Requires `sudo`.
-- `/reboot confirm`: Reboots the server. Requires `sudo`.
+- `/service <name> <action> [totp]`: Manage system services (`start`, `stop`, `restart`, `status`). Requires `sudo`; `start/stop/restart` require TOTP.
+- `/reboot confirm <totp>`: Reboots the server. Requires `sudo` + TOTP.
 
 ### Monitoring
 - `/top`: Returns the top 5 CPU-consuming processes.
@@ -92,16 +107,16 @@ All commands are registered dynamically via the `command_registry` in `src/botty
 ### Docker
 - `/docker_status [compose_dir]`: Reports Docker daemon info and optionally `docker compose ps`.
 - `/docker_list`: Lists all containers and their status.
-- `/docker_restart <container>`: Restarts a specific container.
+- `/docker_restart <container> <totp>`: Restarts a specific container (TOTP required).
 
 ### Network
 - `/network_tests`: Queries the GoHome API for speedtest and device metrics.
 - `/ping <host>`: Performs a simple ping check.
-- `/wol <mac>`: Sends a Wake-on-LAN magic packet.
+- `/wol <mac> <totp>`: Sends a Wake-on-LAN magic packet (TOTP required).
 
 ### Maintenance
 - `/check_updates`: Checks for upgradable packages (via `apt`).
-- `/upgrade_bot confirm`: Pulls latest code from git and restarts the bot service.
+- `/upgrade_bot confirm <totp>`: Pulls latest code from git and restarts the bot service (TOTP required).
 
 Detailed per-command behavior, arguments, output format, and operational notes are documented in `COMMANDS.md`.
 

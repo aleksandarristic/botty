@@ -4,9 +4,10 @@ This document describes the current command behavior implemented under `src/bott
 
 ## Global Behavior
 
-- Authorization: all commands require an authorized user except `/start`.
+- Authorization: all commands require an authorized user.
 - Parse mode: responses are sent with Telegram MarkdownV2 and escaped for safety.
 - Command execution timeout: shell commands default to 10 seconds.
+- TOTP confirmation: state-changing commands require a 6-digit TOTP code as the final argument.
 - Privileged execution: commands marked `sudo=True` run through the base command sudo path.
   - With `BOTTY_SUDO_PASSWORD` set: `sudo -S` with password from env.
   - Without it: `sudo -n` (requires `NOPASSWD` sudoers).
@@ -15,7 +16,7 @@ This document describes the current command behavior implemented under `src/bott
 
 | Command | Handler | Auth | Sudo | Purpose |
 | --- | --- | --- | --- | --- |
-| `/start` | `StartCommand` | No | No | Show currently enabled commands |
+| `/start` | `StartCommand` | Yes | No | Show currently enabled commands |
 | `/status` | `StatusCommand` | Yes | No | Uptime, memory, and root disk |
 | `/emby_status` | `EmbyStatusCommand` | Yes | No | Emby service + storage checks |
 | `/adguard_status` | `AdguardStatusCommand` | Yes | No | AdGuard service status |
@@ -23,22 +24,21 @@ This document describes the current command behavior implemented under `src/bott
 | `/example` | `ExampleCommand` | Yes | No | Developer example command |
 | `/docker_status [target]` | `DockerStatusCommand` | Yes | No | Docker daemon + optional compose status |
 | `/docker_list` | `DockerListCommand` | Yes | No | List containers and statuses |
-| `/docker_restart <container>` | `DockerRestartCommand` | Yes | No | Restart one container |
-| `/service <name> <action>` | `ServiceCommand` | Yes | Yes | `systemctl` service control |
-| `/reboot confirm` | `RebootCommand` | Yes | Yes | Reboot host |
+| `/docker_restart <container> <totp>` | `DockerRestartCommand` | Yes | No | Restart one container |
+| `/service <name> <action> [totp]` | `ServiceCommand` | Yes | Yes | `systemctl` service control |
+| `/reboot confirm <totp>` | `RebootCommand` | Yes | Yes | Reboot host |
 | `/logs <service>` | `LogsCommand` | Yes | Yes | Last 20 journal lines for a unit |
 | `/temp` | `TempCommand` | Yes | No | CPU/system temperatures |
 | `/top` | `TopCommand` | Yes | No | Top CPU processes |
 | `/ping <host>` | `PingCommand` | Yes | No | Ping target host |
-| `/wol <mac>` | `WolCommand` | Yes | No | Send Wake-on-LAN packet |
+| `/wol <mac> <totp>` | `WolCommand` | Yes | No | Send Wake-on-LAN packet |
 | `/check_updates` | `CheckUpdatesCommand` | Yes | No | `apt list --upgradable` |
-| `/upgrade_bot confirm` | `UpgradeBotCommand` | Yes | Partial | `git pull` and restart bot service |
+| `/upgrade_bot confirm <totp>` | `UpgradeBotCommand` | Yes | Partial | `git pull` and restart bot service |
 
 ## Detailed Command Notes
 
 ### `/start`
 - Shows only enabled commands (`ENABLED_COMMANDS` filter applies).
-- Public command (`auth_required = False`).
 
 ### `/status`
 - Collects:
@@ -75,16 +75,17 @@ This document describes the current command behavior implemented under `src/bott
 ### `/docker_list`
 - Runs `docker ps -a --format "table {{.Names}}\t{{.Status}}"`.
 
-### `/docker_restart <container>`
+### `/docker_restart <container> <totp>`
 - Validates container name with a conservative allow-list (`[A-Za-z0-9._-]`).
 - Runs `docker restart <container>`.
 
-### `/service <name> <action>`
+### `/service <name> <action> [totp]`
 - Allowed actions: `start`, `stop`, `restart`, `status`.
+- `start`, `stop`, and `restart` require a trailing TOTP code; `status` does not.
 - Service name is sanitized before execution.
 - Runs `systemctl <action> <service>` through sudo-enabled base execution.
 
-### `/reboot confirm`
+### `/reboot confirm <totp>`
 - Requires explicit `confirm` argument.
 - Runs `reboot` through sudo-enabled base execution.
 
@@ -108,7 +109,7 @@ This document describes the current command behavior implemented under `src/bott
 - Validates host against `^[a-zA-Z0-9.-]+$`.
 - Runs `ping -c 3 <host>`.
 
-### `/wol <mac>`
+### `/wol <mac> <totp>`
 - Accepts `:` or `-` separated MAC addresses.
 - Sends UDP broadcast magic packet to `255.255.255.255:9`.
 
@@ -116,7 +117,7 @@ This document describes the current command behavior implemented under `src/bott
 - Runs `apt list --upgradable`.
 - Removes `Listing...` line from output.
 
-### `/upgrade_bot confirm`
+### `/upgrade_bot confirm <totp>`
 - Requires explicit `confirm`.
 - Steps:
   - `git pull`

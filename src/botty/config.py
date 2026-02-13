@@ -15,6 +15,8 @@ class BottyConfig:
     emby_data_path: str
     media_path: str
     telegram_poll_timeout_seconds: float = 300.0
+    totp_secret: str | None = None
+    totp_window_steps: int = 1
 
     @classmethod
     def from_env(cls) -> "BottyConfig":
@@ -42,6 +44,8 @@ class BottyConfig:
             telegram_poll_timeout_seconds=float(
                 os.getenv("TELEGRAM_POLL_TIMEOUT_SECONDS", "300")
             ),
+            totp_secret=os.getenv("TOTP_SECRET"),
+            totp_window_steps=int(os.getenv("TOTP_WINDOW_STEPS", "1")),
         )
 
     def is_authorized(self, update: Update) -> bool:

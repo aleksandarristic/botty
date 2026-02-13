@@ -81,6 +81,7 @@ class CheckUpdatesCommand(Command):
 class UpgradeBotCommand(Command):
     name = "upgrade_bot"
     description = "Pull latest botty code and restart"
+    requires_totp = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
