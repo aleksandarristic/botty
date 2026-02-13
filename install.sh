@@ -12,6 +12,7 @@
 
 # --- Script Configuration ---
 GIT_REPO_URL="https://github.com/aleksandarristic/botty"
+DEFAULT_SERVICE_USER="botty"
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
@@ -32,6 +33,22 @@ msg() {
 }
 
 # --- Main Logic ---
+
+ensure_service_user() {
+  local user="$1"
+  local group="$1"
+  msg "\n${BOLD}Ensuring service user '$user' exists...${NOFORMAT}"
+
+  if id -u "$user" >/dev/null 2>&1; then
+    msg "${GREEN}✅ Service user '$user' already exists.${NOFORMAT}"
+    return
+  fi
+
+  msg "Creating system user '$user' (group '$group')..."
+  sudo groupadd --system "$group" 2>/dev/null || true
+  sudo useradd --system --gid "$group" --create-home --home-dir "/home/$user" --shell /usr/sbin/nologin "$user"
+  msg "${GREEN}✅ Created service user '$user'.${NOFORMAT}"
+}
 
 check_dependencies() {
   msg "${BOLD}Checking for required dependencies...${NOFORMAT}"
@@ -97,6 +114,9 @@ setup_systemd_service() {
   local SERVICE_FILE_PATH="/etc/systemd/system/botty.service"
   local ENV_FILE_PATH="$INSTALL_DIR/botty.env"
 
+  ensure_service_user "$SERVICE_USER"
+  SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
+
   # Create the environment file
   msg "Creating environment file at $ENV_FILE_PATH..."
   # Use existing GOHOME_API_URL if set (e.g. from sourcing existing env file), else default
@@ -109,7 +129,7 @@ setup_systemd_service() {
     enabled_commands_line="ENABLED_COMMANDS=$ENABLED_COMMANDS"
   fi
   
-  cat > "$ENV_FILE_PATH" << EOL
+  cat << EOL | sudo tee "$ENV_FILE_PATH" > /dev/null
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 AUTHORIZED_USER_ID=$AUTHORIZED_USER_ID
 ${enabled_commands_line}
@@ -117,8 +137,13 @@ GOHOME_API_URL="$GOHOME_API_URL"
 EMBY_DATA_PATH="$EMBY_DATA_PATH"
 MEDIA_PATH="$MEDIA_PATH"
 EOL
-  # Secure the environment file (best effort, requires user to be owner or have perms)
-  chmod 600 "$ENV_FILE_PATH" || msg "${YELLOW}Warning: Could not set permissions on $ENV_FILE_PATH. Please secure it manually.${NOFORMAT}"
+  sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$ENV_FILE_PATH"
+  sudo chmod 600 "$ENV_FILE_PATH"
+
+  # Ensure service user can read and execute the installation tree.
+  msg "Adjusting ownership for $INSTALL_DIR to $SERVICE_USER..."
+  sudo chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR"
+  sudo find "$INSTALL_DIR" -type d -exec chmod 750 {} \;
 
   # Create the service file content
   local service_content
@@ -128,8 +153,8 @@ Description=Botty Telegram Bot
 After=network.target
 
 [Service]
-User=$(whoami)
-Group=$(id -gn)
+User=$SERVICE_USER
+Group=$SERVICE_GROUP
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/.venv/bin/botty
 EnvironmentFile=$ENV_FILE_PATH
@@ -192,6 +217,7 @@ main() {
   local REINSTALL=false
   local UNINSTALL=false
   local UPDATE=false
+  SERVICE_USER="$DEFAULT_SERVICE_USER"
   for arg in "$@"; do
     case $arg in
       --reinstall)
@@ -204,6 +230,10 @@ main() {
         ;;
       --update)
         UPDATE=true
+        shift
+        ;;
+      --service-user=*)
+        SERVICE_USER="${arg#*=}"
         shift
         ;;
     esac
@@ -219,10 +249,11 @@ main() {
     msg "${GREEN}Git repository detected. Installing from the current directory.${NOFORMAT}"
     INSTALL_DIR=$(pwd)
     IS_LOCAL_INSTALL=true
+    msg "${YELLOW}Note: service will run as '$SERVICE_USER' and installer will chown this directory to that user.${NOFORMAT}"
   else
     msg "\n${BOLD}Please provide the following information:${NOFORMAT}"
-    read -p "Enter the full path to install Botty (e.g., /home/youruser/botty): " INSTALL_DIR
-    INSTALL_DIR=${INSTALL_DIR:-"$HOME/botty"}
+    read -p "Enter the full path to install Botty (e.g., /opt/botty): " INSTALL_DIR
+    INSTALL_DIR=${INSTALL_DIR:-"/opt/botty"}
     IS_LOCAL_INSTALL=false
   fi
   
@@ -300,6 +331,7 @@ main() {
 
   msg "\n\n${GREEN}${BOLD}🎉 Botty installation finished successfully!${NOFORMAT}"
   msg "-----------------------------------------------------"
+  msg "Service user: ${CYAN}$SERVICE_USER${NOFORMAT}"
   msg "To check the service status, run: ${CYAN}sudo systemctl status botty.service${NOFORMAT}"
   msg "To view live logs, run:       ${CYAN}sudo journalctl -u botty.service -f${NOFORMAT}"
 }

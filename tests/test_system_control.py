@@ -1,6 +1,8 @@
-import pytest
 from unittest.mock import AsyncMock, patch
-from botty.cmd.handlers.system_control.command import ServiceCommand, RebootCommand
+
+import pytest
+
+from botty.cmd.handlers.system_control.command import RebootCommand, ServiceCommand
 
 @pytest.fixture
 def mock_update():
@@ -31,11 +33,11 @@ async def test_service_command_success(mock_update, mock_context):
     cmd = ServiceCommand(AsyncMock())
     mock_context.args = ["nginx", "restart"]
     
-    with patch("botty.cmd.handlers.system_control.command.run_command", new_callable=AsyncMock) as mock_run:
+    with patch("botty.cmd.handlers.base.run_command", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = ""
         await cmd.run(mock_update, mock_context)
         
-        mock_run.assert_called_with(["sudo", "systemctl", "restart", "nginx"])
+        mock_run.assert_called_with(["systemctl", "restart", "nginx"], timeout=10.0, sudo=True)
         assert mock_update.message.reply_text.called
         args, _ = mock_update.message.reply_text.call_args
         assert "Service Restarted" in args[0] or "Service restart" in args[0] or "Service nginx restarted" in args[0]
@@ -56,10 +58,10 @@ async def test_reboot_command_confirm(mock_update, mock_context):
     cmd = RebootCommand(AsyncMock())
     mock_context.args = ["confirm"]
     
-    with patch("botty.cmd.handlers.system_control.command.run_command", new_callable=AsyncMock) as mock_run:
+    with patch("botty.cmd.handlers.base.run_command", new_callable=AsyncMock) as mock_run:
         await cmd.run(mock_update, mock_context)
         
-        mock_run.assert_called_with(["sudo", "reboot"])
+        mock_run.assert_called_with(["reboot"], timeout=10.0, sudo=True)
         assert mock_update.message.reply_text.called
         args, _ = mock_update.message.reply_text.call_args
         assert "Rebooting system now" in args[0]

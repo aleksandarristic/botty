@@ -5,6 +5,7 @@ from telegram import Message, Update
 from telegram.error import BadRequest
 
 from botty.config import BottyConfig
+from botty.utils import run_command
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class Command(ABC):
     name: str
     description: str
     auth_required: bool = True
+    sudo: bool = False
 
     def __init__(self, config: BottyConfig) -> None:
         self.config = config
@@ -60,6 +62,16 @@ class Command(ABC):
                 extra={"command": getattr(self, "name", self.__class__.__name__)},
             )
             await message.reply_text("Error executing command.")
+
+    async def _run_command(
+        self,
+        command: list[str],
+        timeout: float = 10.0,
+        sudo: bool | None = None,
+    ) -> str:
+        """Execute shell commands with command-level sudo defaults."""
+        use_sudo = self.sudo if sudo is None else sudo
+        return await run_command(command, timeout=timeout, sudo=use_sudo)
 
     @abstractmethod
     async def run(self, update: Update, context) -> None:

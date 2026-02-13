@@ -6,10 +6,23 @@ import subprocess
 from typing import List
 
 
-async def run_command(command: List[str], timeout: float = 10.0) -> str:
+async def run_command(
+    command: List[str],
+    timeout: float = 10.0,
+    sudo: bool = False,
+    sudo_password_env: str = "BOTTY_SUDO_PASSWORD",
+) -> str:
     """Runs a subprocess and returns the output, with an optional timeout."""
     if not command:
         return "Error: No command provided"
+
+    sudo_password = os.getenv(sudo_password_env, "")
+    if sudo and command[0] != "sudo":
+        if sudo_password:
+            command = ["sudo", "-S", "-k", "-p", "", *command]
+        else:
+            # Fail fast when sudo needs a password and no TTY is available.
+            command = ["sudo", "-n", *command]
 
     executable = command[0]
     if not os.path.isabs(executable):
@@ -20,16 +33,23 @@ async def run_command(command: List[str], timeout: float = 10.0) -> str:
     env = os.environ.copy()
     env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
+    use_sudo_stdin = sudo and bool(sudo_password) and "-S" in command
+    stdin = asyncio.subprocess.PIPE if use_sudo_stdin else asyncio.subprocess.DEVNULL
+    sudo_input = f"{sudo_password}\n".encode() if use_sudo_stdin else None
+
     process = await asyncio.create_subprocess_exec(
         *command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        stdin=asyncio.subprocess.DEVNULL,
+        stdin=stdin,
         env=env,
     )
     timed_out = False
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(input=sudo_input),
+            timeout=timeout,
+        )
     except asyncio.TimeoutError:
         timed_out = True
         try:
@@ -50,6 +70,7 @@ async def run_command(command: List[str], timeout: float = 10.0) -> str:
                 errors="replace",
                 timeout=min(timeout, 2.0),
                 env=env,
+                input=f"{sudo_password}\n" if use_sudo_stdin else None,
             )
         except subprocess.TimeoutExpired:
             return f"Error: Command timed out after {timeout} seconds"

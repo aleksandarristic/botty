@@ -16,14 +16,18 @@ When run from within the repository, `./install.sh` detects the local tree, prom
 
 1. Prompts for or sources `TELEGRAM_BOT_TOKEN` and one or more comma-separated `AUTHORIZED_USER_ID`s.
 2. Prompts for optional service-specific values (`GOHOME_API_URL`, `EMBY_DATA_PATH`, `MEDIA_PATH`) when not already set.
-3. Creates `./.venv`, installs `botty` in editable mode, and writes a `botty.env` file.
-4. Registers `/etc/systemd/system/botty.service`, reloads the daemon, enables, and restarts the service.
+3. Creates/uses a dedicated service account (default: `botty`).
+4. Creates `<install_dir>/.venv`, installs `botty` in editable mode, and writes a `botty.env` file.
+5. Registers `/etc/systemd/system/botty.service` with `User=botty`, reloads the daemon, enables, and restarts the service.
 
 Additional flags:
 
 - `--update`: reruns `git pull` prior to reinstalling (skipped by default in local mode).
 - `--reinstall`: re-prompts for every secret and path, overwriting `botty.env`.
 - `--uninstall`: stops/disables the service and removes the unit file (leaving the install directory intact).
+- `--service-user=<name>`: optional override for the service account (default `botty`).
+
+When installing from an existing local clone, the installer updates ownership of the install directory to the selected service user so systemd can run it.
 
 ### Manual development setup
 
@@ -53,22 +57,114 @@ Run the bot locally with `botty`.
 - `ENABLED_COMMANDS`: optional comma-separated list of command names to enable (e.g., `status,network_tests`). If omitted, all commands are enabled. `/start` is always enabled.
 - `GOHOME_API_URL`: endpoint for network results (default `http://localhost:8080/status`).
 - `EMBY_DATA_PATH` / `MEDIA_PATH`: paths used for drive checks; defaults `/mnt/embydata` and `/mnt/media`.
+- `BOTTY_SUDO_PASSWORD`: optional sudo password used for privileged commands when command handlers enable `sudo=True`.
 
-Service installations store these values in `botty.env`, whereas `.env` is used during manual runs.
+Service installations store these values in `botty.env`, whereas `.env` is used during manual runs. Keep `botty.env` private and out of version control.
 
 ## Existing Commands
 
 All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py`. Authorization is enforced in the `Command` base class; most commands require authorization, while `/start` is public.
 
-- `/start`: list the available commands and remind the user of the current UI.
-- `/status`: reports uptime, memory, and disk usage gathered from `uptime`, `free`, and `df`.
-- `/emby_status`: fetches `systemctl status emby-server`, plus drive usage for `EMBY_DATA_PATH` and `MEDIA_PATH`.
-- `/adguard_status`: fetches `systemctl status AdGuardHome`.
-- `/network_tests`: queries the GoHome API and formats speedtest stats, ping targets, and device metrics (temperature, memory, load averages, uptime) inside fenced MarkdownV2 code blocks.
-- `/example [args...]`: demo command that shows command execution, config usage, and argument handling via `context.args`.
-- `/docker_status [compose_dir_or_file]`: reports Docker daemon info and optionally runs `docker compose ps` for a provided compose directory/file.
+### System & Control
+- `/start`: List the available commands.
+- `/status`: Reports uptime, memory, and disk usage.
+- `/service <name> <action>`: Manage system services (`start`, `stop`, `restart`, `status`). Requires `sudo`.
+- `/reboot confirm`: Reboots the server. Requires `sudo`.
+
+### Monitoring
+- `/top`: Returns the top 5 CPU-consuming processes.
+- `/temp`: Reports system temperatures (via `sensors` or `/sys/class/thermal`).
+- `/logs <service>`: Returns the last 20 lines of `journalctl -u <service>`. Requires `sudo`.
+
+### Docker
+- `/docker_status [compose_dir]`: Reports Docker daemon info and optionally `docker compose ps`.
+- `/docker_list`: Lists all containers and their status.
+- `/docker_restart <container>`: Restarts a specific container.
+
+### Network
+- `/network_tests`: Queries the GoHome API for speedtest and device metrics.
+- `/ping <host>`: Performs a simple ping check.
+- `/wol <mac>`: Sends a Wake-on-LAN magic packet.
+
+### Maintenance
+- `/check_updates`: Checks for upgradable packages (via `apt`).
+- `/upgrade_bot confirm`: Pulls latest code from git and restarts the bot service.
+
+Detailed per-command behavior, arguments, output format, and operational notes are documented in `COMMANDS.md`.
 
 Every textual reply is sanitized with `escape_markdown` / `escape_markdown_code` helpers in `src/botty/utils.py` to stay compatible with Telegram MarkdownV2.
+
+## Permissions & Sudo
+
+Several commands require `sudo` privileges. Command handlers opt in with `sudo=True` (default is `False` in the base `Command` class). When enabled, command execution uses `sudo` automatically:
+
+- If `BOTTY_SUDO_PASSWORD` is set, commands run via `sudo -S` and the password is passed through stdin.
+- If `BOTTY_SUDO_PASSWORD` is not set, commands run via `sudo -n` (non-interactive), which requires passwordless sudo.
+
+For production, configure narrowly scoped passwordless sudo for the bot service user.
+
+### Privilege Matrix
+
+| Command | Underlying OS command(s) | Needs sudo |
+| --- | --- | --- |
+| `/service <name> <action>` | `systemctl start/stop/restart/status <name>` | Yes |
+| `/logs <service>` | `journalctl -u <service> -n 20 --no-pager` | Yes |
+| `/reboot confirm` | `reboot` | Yes |
+| `/upgrade_bot confirm` | `git pull` then `systemctl restart botty` | Only `systemctl` step |
+| `/check_updates` | `apt list --upgradable` | No |
+| `/status`, `/top`, `/temp`, `/docker_*`, `/network_*` | read-only process/network/docker commands | No (unless your host requires it for docker) |
+
+### Recommended sudoers (service allow-list)
+
+Create `/etc/sudoers.d/botty` with `visudo`:
+
+```bash
+sudo visudo -f /etc/sudoers.d/botty
+```
+
+Example policy for service user `botty`:
+
+```sudoers
+Cmnd_Alias BOTTY_SYSTEMCTL = /usr/bin/systemctl start botty, /usr/bin/systemctl stop botty, /usr/bin/systemctl restart botty, /usr/bin/systemctl status botty, /usr/bin/systemctl start nginx, /usr/bin/systemctl stop nginx, /usr/bin/systemctl restart nginx, /usr/bin/systemctl status nginx
+Cmnd_Alias BOTTY_LOGS = /usr/bin/journalctl -u botty -n 20 --no-pager, /usr/bin/journalctl -u nginx -n 20 --no-pager
+Cmnd_Alias BOTTY_REBOOT = /usr/sbin/reboot, /usr/bin/reboot
+
+botty ALL=(root) NOPASSWD: BOTTY_SYSTEMCTL, BOTTY_LOGS, BOTTY_REBOOT
+```
+
+Then:
+
+```bash
+sudo chown root:root /etc/sudoers.d/botty
+sudo chmod 440 /etc/sudoers.d/botty
+sudo -l -U botty
+```
+
+If your managed services run under different Linux users, this is still fine: `systemctl`/`journalctl` are system-level controls. What matters is which unit names you allow in sudoers, not the runtime user of those units.
+
+### Dedicated Service User Guide
+
+Yes, `install.sh` can create the service user automatically.
+
+Default behavior:
+- service user is `botty`
+- installer creates `botty` if missing
+- systemd unit runs with `User=botty`
+
+Manual setup (if you want to pre-create it yourself):
+
+```bash
+sudo groupadd --system botty
+sudo useradd --system --gid botty --create-home --home-dir /home/botty --shell /usr/sbin/nologin botty
+```
+
+Then run installer:
+
+```bash
+./install.sh
+# or choose another account explicitly:
+./install.sh --service-user=mybot
+```
 
 ## Customization: Adding New Commands
 
@@ -165,3 +261,4 @@ pytest
 - `tests/`: handler and utility tests.
 - `install.sh`: produces the `.venv` installation, configuration file, and systemd unit.
 - `.env.example`: template for local development secrets.
+- `COMMANDS.md`: detailed command reference and operational behavior.

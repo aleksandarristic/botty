@@ -1,6 +1,23 @@
+import asyncio
+
 import pytest
 
 from botty.utils import escape_markdown, escape_markdown_code, run_command
+
+
+class _FakeProcess:
+    def __init__(self, *, returncode: int = 0, stdout: bytes = b"", stderr: bytes = b"") -> None:
+        self.returncode = returncode
+        self._stdout = stdout
+        self._stderr = stderr
+        self.communicate_input = None
+
+    async def communicate(self, input=None):
+        self.communicate_input = input
+        return self._stdout, self._stderr
+
+    def kill(self) -> None:
+        return None
 
 
 @pytest.mark.asyncio
@@ -27,6 +44,46 @@ async def test_run_command_timeout():
     # Use a short timeout to trigger the exception
     result = await run_command(command, timeout=0.1)
     assert "Error: Command timed out after 0.1 seconds" in result
+
+
+@pytest.mark.asyncio
+async def test_run_command_sudo_without_password_uses_noninteractive(monkeypatch):
+    captured = {}
+    fake_process = _FakeProcess(stdout=b"ok\n")
+
+    async def _fake_exec(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return fake_process
+
+    monkeypatch.delenv("BOTTY_SUDO_PASSWORD", raising=False)
+    monkeypatch.setattr("botty.utils.asyncio.create_subprocess_exec", _fake_exec)
+    result = await run_command(["true"], sudo=True)
+
+    assert result.strip() == "ok"
+    assert captured["args"][1] == "-n"
+    assert captured["kwargs"]["stdin"] == asyncio.subprocess.DEVNULL
+    assert fake_process.communicate_input is None
+
+
+@pytest.mark.asyncio
+async def test_run_command_sudo_with_password_uses_stdin(monkeypatch):
+    captured = {}
+    fake_process = _FakeProcess(stdout=b"ok\n")
+
+    async def _fake_exec(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return fake_process
+
+    monkeypatch.setenv("BOTTY_SUDO_PASSWORD", "secret")
+    monkeypatch.setattr("botty.utils.asyncio.create_subprocess_exec", _fake_exec)
+    result = await run_command(["id"], sudo=True)
+
+    assert result.strip() == "ok"
+    assert "-S" in captured["args"]
+    assert captured["kwargs"]["stdin"] == asyncio.subprocess.PIPE
+    assert fake_process.communicate_input == b"secret\n"
 
 
 def test_escape_markdown():

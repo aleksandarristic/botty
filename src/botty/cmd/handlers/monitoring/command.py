@@ -103,6 +103,7 @@ class TempCommand(Command):
 class LogsCommand(Command):
     name = "logs"
     description = "Show service logs"
+    sudo = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -123,8 +124,8 @@ class LogsCommand(Command):
              await self._reply_markdown(reply_message, "Invalid service name.")
              return
 
-        cmd = ["sudo", "journalctl", "-u", service_name, "-n", "20", "--no-pager"]
-        output = await run_command(cmd)
+        cmd = ["journalctl", "-u", service_name, "-n", "20", "--no-pager"]
+        output = await self._run_command(cmd)
         
         if not output.strip():
             output = "No logs found or service does not exist."

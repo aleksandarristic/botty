@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from botty.cmd.handlers.base import Command
-from botty.utils import escape_markdown_code, run_command
+from botty.utils import escape_markdown_code
 
 
 class CheckUpdatesCommand(Command):
@@ -23,12 +23,12 @@ class CheckUpdatesCommand(Command):
         # Let's just list what is currently known.
         
         cmd = ["apt", "list", "--upgradable"]
-        output = await run_command(cmd)
+        output = await self._run_command(cmd)
         
         if "Listing..." in output:
              lines = output.splitlines()
              # Filter out "Listing..."
-             lines = [l for l in lines if l != "Listing..."]
+             lines = [line for line in lines if line != "Listing..."]
              output = "\n".join(lines)
 
         if not output.strip():
@@ -61,7 +61,7 @@ class UpgradeBotCommand(Command):
 
         await self._reply_markdown(reply_message, "Pulling latest changes...")
         
-        pull_output = await run_command(["git", "pull"])
+        pull_output = await self._run_command(["git", "pull"])
         
         if "Already up to date" in pull_output:
              await self._reply_markdown(
@@ -77,4 +77,4 @@ class UpgradeBotCommand(Command):
         
         # Restart service
         # This will kill the bot process.
-        await run_command(["sudo", "systemctl", "restart", "botty"])
+        await self._run_command(["systemctl", "restart", "botty"], sudo=True)

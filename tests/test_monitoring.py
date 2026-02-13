@@ -1,6 +1,8 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from botty.cmd.handlers.monitoring.command import TopCommand, TempCommand, LogsCommand
+
+from botty.cmd.handlers.monitoring.command import LogsCommand, TempCommand, TopCommand
 
 @pytest.fixture
 def mock_update():
@@ -56,11 +58,15 @@ async def test_logs_command_success(mock_update, mock_context):
     cmd = LogsCommand(AsyncMock())
     mock_context.args = ["botty"]
     
-    with patch("botty.cmd.handlers.monitoring.command.run_command", new_callable=AsyncMock) as mock_run:
+    with patch("botty.cmd.handlers.base.run_command", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = "Feb 13 12:00:00 botty[123]: Started"
         await cmd.run(mock_update, mock_context)
-        
-        mock_run.assert_called_with(["sudo", "journalctl", "-u", "botty", "-n", "20", "--no-pager"])
+
+        mock_run.assert_called_with(
+            ["journalctl", "-u", "botty", "-n", "20", "--no-pager"],
+            timeout=10.0,
+            sudo=True,
+        )
         args, _ = mock_update.message.reply_text.call_args
         assert "Logs for botty" in args[0]
         assert "Started" in args[0]

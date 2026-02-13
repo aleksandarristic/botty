@@ -2,12 +2,13 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from botty.cmd.handlers.base import Command
-from botty.utils import escape_markdown_code, run_command
+from botty.utils import escape_markdown_code
 
 
 class ServiceCommand(Command):
     name = "service"
     description = "Manage system services (start/stop/restart/status)"
+    sudo = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -44,13 +45,12 @@ class ServiceCommand(Command):
             )
              return
 
-        # Construct command. Note: likely requires passwordless sudo for the bot user.
-        cmd = ["sudo", "systemctl", action, service_name]
+        cmd = ["systemctl", action, service_name]
         
         # For status, we want to capture output. For others, just success/fail mostly, 
         # but systemctl usually outputs nothing on success (except status).
         
-        output = await run_command(cmd)
+        output = await self._run_command(cmd)
         
         # If output is empty (common for success on start/stop/restart), say "Done".
         if not output.strip() and action != "status":
@@ -65,6 +65,7 @@ class ServiceCommand(Command):
 class RebootCommand(Command):
     name = "reboot"
     description = "Reboot the server"
+    sudo = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -84,4 +85,4 @@ class RebootCommand(Command):
         
         # Fire and forget mostly, or wait a bit. 
         # The bot will die shortly after this.
-        await run_command(["sudo", "reboot"])
+        await self._run_command(["reboot"])
