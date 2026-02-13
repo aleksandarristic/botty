@@ -1,137 +1,154 @@
 #!/bin/bash
 
 # ==============================================================================
-# Botty Semi-Interactive Installer
+# Botty Installer
 #
-# This script installs the Botty Telegram bot, creates a virtual environment,
-# and sets it up as a systemd service.
+# Installs/updates Botty, configures systemd, and generates scoped sudoers rules.
 #
-# Usage:
-#   curl -sSL https://raw.githubusercontent.com/aleksandarristic/botty/main/install.sh | bash
+# Run as a normal user (NOT root). The script uses sudo for privileged steps.
 # ==============================================================================
 
-# --- Script Configuration ---
+set -euo pipefail
+
 GIT_REPO_URL="https://github.com/aleksandarristic/botty"
 DEFAULT_SERVICE_USER="botty"
+SERVICE_NAME="botty"
+SUDOERS_PATH="/etc/sudoers.d/botty"
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
-
-# --- Helper Functions for Colors and Logging ---
 setup_colors() {
   if [[ -t 2 ]] && [[ -z "${NO_COLOR-}" ]] && [[ "${TERM-}" != "dumb" ]]; then
-    NOFORMAT='\033[0m' BOLD='\033[1m' FAINT='\033[2m' ITALIC='\033[3m' UNDERLINE='\033[4m'
-    RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' BLUE='\033[0;34m' MAGENTA='\033[0;35m' CYAN='\033[0;36m'
+    NOFORMAT='\033[0m'
+    BOLD='\033[1m'
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[0;33m'
+    CYAN='\033[0;36m'
   else
-    NOFORMAT='' BOLD='' FAINT='' ITALIC='' UNDERLINE=''
-    RED='' GREEN='' YELLOW='' BLUE='' MAGENTA='' CYAN=''
+    NOFORMAT='' BOLD='' RED='' GREEN='' YELLOW='' CYAN=''
   fi
 }
 
-msg() {
-  echo >&2 -e "${1-}"
+msg() { echo >&2 -e "${1-}"; }
+
+die() {
+  msg "${RED}Error: $1${NOFORMAT}"
+  exit 1
 }
 
-# --- Main Logic ---
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  echo "$s"
+}
 
 require_non_root() {
-  if [[ "$EUID" -eq 0 ]]; then
-    msg "${RED}Error: Do not run install.sh with sudo/root.${NOFORMAT}"
-    msg "Run it as your normal user."
-    msg "The script will invoke sudo only for privileged steps."
-    exit 1
-  fi
+  [[ "${EUID}" -ne 0 ]] || die "Do not run install.sh with sudo/root. Run as your normal user."
 }
 
-ensure_install_dir_access() {
-  local install_dir="$1"
-  local owner_user
-  owner_user="$(id -un)"
-  local owner_group
-  owner_group="$(id -gn)"
-
-  if [[ ! -e "$install_dir" ]]; then
-    msg "${YELLOW}Install directory $install_dir does not exist. Creating it with sudo...${NOFORMAT}"
-    sudo mkdir -p "$install_dir"
-    sudo chown "$owner_user:$owner_group" "$install_dir"
-    sudo chmod 755 "$install_dir"
-    return
-  fi
-
-  if [[ ! -d "$install_dir" ]]; then
-    msg "${RED}Error: $install_dir exists but is not a directory.${NOFORMAT}"
-    exit 1
-  fi
-
-  if [[ ! -w "$install_dir" ]]; then
-    msg "${YELLOW}Install directory $install_dir is not writable by $owner_user. Fixing ownership with sudo...${NOFORMAT}"
-    sudo chown -R "$owner_user:$owner_group" "$install_dir"
-  fi
+require_dependencies() {
+  local deps=(git python3 pip sudo)
+  local missing=()
+  for dep in "${deps[@]}"; do
+    command -v "$dep" >/dev/null 2>&1 || missing+=("$dep")
+  done
+  [[ ${#missing[@]} -eq 0 ]] || die "Missing dependencies: ${missing[*]}"
 }
 
 ensure_sudo_access() {
-  msg "\n${BOLD}Requesting sudo access for privileged install steps...${NOFORMAT}"
+  msg "\n${BOLD}Requesting sudo access for privileged steps...${NOFORMAT}"
   sudo -v
 }
 
 check_noexec_mount() {
   local target="$1"
-  if ! command -v findmnt &> /dev/null; then
-    return
-  fi
+  command -v findmnt >/dev/null 2>&1 || return 0
   local options
   options="$(findmnt -no OPTIONS "$target" 2>/dev/null || true)"
   if [[ ",$options," == *",noexec,"* ]]; then
-    msg "${RED}Error: $target is on a noexec mount. Executables cannot run from here.${NOFORMAT}"
-    msg "Use a different install directory (for example /opt/botty on an exec-enabled mount)."
-    exit 1
+    die "$target is on a noexec mount. Choose a different install dir."
   fi
 }
 
-ensure_service_runtime_access() {
-  local service_user="$1"
-  local service_group="$2"
-  local install_dir="$3"
+is_empty_dir() {
+  local dir="$1"
+  [[ -d "$dir" ]] && [[ -z "$(ls -A "$dir" 2>/dev/null)" ]]
+}
 
-  # Ensure service user can traverse all parent directories.
-  local current="$install_dir"
-  local parents=()
-  while [[ "$current" != "/" ]]; do
-    current="$(dirname "$current")"
-    parents=("$current" "${parents[@]}")
-  done
+ensure_install_dir_access() {
+  local install_dir="$1"
+  local user group
+  user="$(id -un)"
+  group="$(id -gn)"
 
-  for parent in "${parents[@]}"; do
-    if ! sudo -u "$service_user" test -x "$parent" 2>/dev/null; then
-      if command -v setfacl &> /dev/null; then
-        msg "${YELLOW}Granting traverse permission on $parent for $service_user via ACL...${NOFORMAT}"
-        sudo setfacl -m "u:$service_user:x" "$parent" || true
-      fi
+  if [[ ! -e "$install_dir" ]]; then
+    msg "${YELLOW}Creating install dir $install_dir with sudo...${NOFORMAT}"
+    sudo mkdir -p "$install_dir"
+    sudo chown "$user:$group" "$install_dir"
+    sudo chmod 755 "$install_dir"
+    return
+  fi
+
+  [[ -d "$install_dir" ]] || die "$install_dir exists but is not a directory."
+  if [[ ! -w "$install_dir" ]]; then
+    msg "${YELLOW}Fixing ownership on $install_dir for current user...${NOFORMAT}"
+    sudo chown -R "$user:$group" "$install_dir"
+  fi
+}
+
+safe_load_env_file() {
+  local env_file="$1"
+  [[ -f "$env_file" ]] || return
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="$(trim "$line")"
+    [[ -n "$line" ]] || continue
+    [[ "${line:0:1}" == "#" ]] && continue
+    [[ "$line" == *=* ]] || continue
+
+    local key="${line%%=*}"
+    local value="${line#*=}"
+    key="$(trim "$key")"
+    value="$(trim "$value")"
+    if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+      value="${value:1:${#value}-2}"
     fi
-  done
 
-  # Directory + file permissions for runtime.
-  sudo find "$install_dir" -type d -exec chmod 750 {} \;
-  if [[ -d "$install_dir/.venv/bin" ]]; then
-    sudo find "$install_dir/.venv/bin" -type f -exec chmod 750 {} \;
-  fi
+    case "$key" in
+      TELEGRAM_BOT_TOKEN) TELEGRAM_BOT_TOKEN="$value" ;;
+      AUTHORIZED_USER_ID) AUTHORIZED_USER_ID="$value" ;;
+      GOHOME_API_URL) GOHOME_API_URL="$value" ;;
+      EMBY_DATA_PATH) EMBY_DATA_PATH="$value" ;;
+      MEDIA_PATH) MEDIA_PATH="$value" ;;
+      ENABLED_COMMANDS) ENABLED_COMMANDS_RAW="$value" ;;
+      BOTTY_SERVICE_ALLOWLIST) BOTTY_SERVICE_ALLOWLIST="$value" ;;
+      BOTTY_SUDO_PASSWORD) BOTTY_SUDO_PASSWORD="$value" ;;
+    esac
+  done < "$env_file"
+}
 
-  # Validate executability as service user before starting systemd unit.
-  if ! sudo -u "$service_user" test -x "$install_dir/.venv/bin/python"; then
-    msg "${RED}Error: service user '$service_user' cannot execute $install_dir/.venv/bin/python${NOFORMAT}"
-    exit 1
-  fi
-  if ! sudo -u "$service_user" test -x "$install_dir/.venv/bin/botty"; then
-    msg "${RED}Error: service user '$service_user' cannot execute $install_dir/.venv/bin/botty${NOFORMAT}"
-    exit 1
+prompt_secret_if_empty() {
+  local var_name="$1"
+  local prompt="$2"
+  local current="${!var_name:-}"
+  if [[ -z "$current" || "$REINSTALL" == "true" ]]; then
+    read -rsp "$prompt" current
+    echo
+    [[ -n "$current" ]] || die "$var_name cannot be empty."
+    printf -v "$var_name" "%s" "$current"
   fi
 }
 
-trim() {
-  local s="$1"
-  # shellcheck disable=SC2001
-  s="$(echo "$s" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-  echo "$s"
+prompt_if_empty() {
+  local var_name="$1"
+  local prompt="$2"
+  local default="$3"
+  local current="${!var_name:-}"
+  if [[ -z "$current" || "$REINSTALL" == "true" ]]; then
+    read -rp "$prompt" current
+    current="${current:-$default}"
+    printf -v "$var_name" "%s" "$current"
+  fi
 }
 
 parse_csv_to_array() {
@@ -141,9 +158,7 @@ parse_csv_to_array() {
   IFS=',' read -r -a raw_items <<< "$input"
   for item in "${raw_items[@]}"; do
     item="$(trim "$item")"
-    if [[ -n "$item" ]]; then
-      out_ref+=("$item")
-    fi
+    [[ -n "$item" ]] && out_ref+=("$item")
   done
 }
 
@@ -152,9 +167,35 @@ validate_service_name() {
   [[ "$service" =~ ^[a-zA-Z0-9_.@-]+$ ]]
 }
 
-collect_enabled_commands_interactive() {
-  local commands=()
-  mapfile -t commands < <("$INSTALL_DIR/.venv/bin/python" - "$INSTALL_DIR" << 'PY'
+collect_service_allowlist() {
+  BOTTY_SERVICE_ALLOWLIST="${BOTTY_SERVICE_ALLOWLIST:-botty}"
+  msg "\n${BOLD}Enabled systemd services on this host:${NOFORMAT}"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl list-unit-files --type=service --state=enabled --no-legend --no-pager 2>/dev/null | awk '{print "  - " $1}' >&2 || true
+  else
+    msg "${YELLOW}systemctl not found; service list unavailable.${NOFORMAT}"
+  fi
+
+  msg "\nChoose service names Botty may manage via /service and /logs."
+  read -rp "Enter BOTTY_SERVICE_ALLOWLIST (comma-separated, default: ${BOTTY_SERVICE_ALLOWLIST}): " selected
+  if [[ -n "$(trim "$selected")" ]]; then
+    BOTTY_SERVICE_ALLOWLIST="$selected"
+  fi
+
+  local services=()
+  parse_csv_to_array "$BOTTY_SERVICE_ALLOWLIST" services
+  [[ ${#services[@]} -gt 0 ]] || services=("botty")
+
+  local normalized=()
+  for service in "${services[@]}"; do
+    validate_service_name "$service" || die "Invalid service name in allow-list: $service"
+    normalized+=("$service")
+  done
+  BOTTY_SERVICE_ALLOWLIST="$(IFS=','; echo "${normalized[*]}")"
+}
+
+discover_commands() {
+  "$INSTALL_DIR/.venv/bin/python" - "$INSTALL_DIR" << 'PY'
 import sys
 from pathlib import Path
 
@@ -162,26 +203,27 @@ install_dir = Path(sys.argv[1])
 sys.path.insert(0, str(install_dir / "src"))
 
 from botty.cmd.handlers import ALL_COMMAND_CLASSES  # noqa: E402
-
-for cmd_class in ALL_COMMAND_CLASSES:
-    print(cmd_class.name)
+for cls in ALL_COMMAND_CLASSES:
+    print(cls.name)
 PY
-  )
+}
 
-  if [[ ${#commands[@]} -eq 0 ]]; then
-    msg "${YELLOW}Could not discover command list automatically. Keeping existing ENABLED_COMMANDS.${NOFORMAT}"
-    return
-  fi
+collect_enabled_commands_interactive() {
+  local commands=()
+  mapfile -t commands < <(discover_commands)
+  [[ ${#commands[@]} -gt 0 ]] || die "Could not discover bot commands from install tree."
 
   local current_display="all commands"
-  if [[ -n "${ENABLED_COMMANDS+x}" ]] && [[ -n "$ENABLED_COMMANDS" ]]; then
-    current_display="$ENABLED_COMMANDS"
-  elif [[ -n "${ENABLED_COMMANDS+x}" ]] && [[ -z "$ENABLED_COMMANDS" ]]; then
+  if [[ "${ENABLED_COMMANDS_RAW}" == "__UNSET__" ]]; then
+    current_display="all commands"
+  elif [[ -z "${ENABLED_COMMANDS_RAW}" ]]; then
     current_display="none (except /start)"
+  else
+    current_display="${ENABLED_COMMANDS_RAW}"
   fi
 
   msg "\n${BOLD}Interactive Bot Command Selection${NOFORMAT}"
-  msg "Current selection: ${CYAN}$current_display${NOFORMAT}"
+  msg "Current selection: ${CYAN}${current_display}${NOFORMAT}"
   msg "Available commands:"
   local i=1
   for cmd in "${commands[@]}"; do
@@ -189,136 +231,202 @@ PY
     ((i++))
   done
   msg "Choose by comma-separated numbers or names."
-  msg "Examples: 1,3,5   OR   status,network_tests"
-  msg "Special values: 'all' (enable all), 'none' (disable all except /start), Enter (keep current)"
+  msg "Special values: all, none, or Enter to keep current."
 
-  read -p "Enter ENABLED_COMMANDS selection: " selection_raw
-  local selection
+  local selection_raw selection lowered
+  read -rp "Enter ENABLED_COMMANDS selection: " selection_raw
   selection="$(trim "$selection_raw")"
+  [[ -n "$selection" ]] || return
 
-  if [[ -z "$selection" ]]; then
-    return
-  fi
-
-  local lowered
   lowered="$(echo "$selection" | tr '[:upper:]' '[:lower:]')"
   if [[ "$lowered" == "all" ]]; then
-    ENABLED_COMMANDS=""
-    unset ENABLED_COMMANDS
+    ENABLED_COMMANDS_RAW="__UNSET__"
     return
   fi
   if [[ "$lowered" == "none" ]]; then
-    ENABLED_COMMANDS="__NONE__"
+    ENABLED_COMMANDS_RAW=""
     return
   fi
 
-  local selected_commands=()
-  IFS=',' read -r -a selected_items <<< "$selection"
-  for item in "${selected_items[@]}"; do
+  local selected=()
+  IFS=',' read -r -a items <<< "$selection"
+  for item in "${items[@]}"; do
     item="$(trim "$item")"
-    if [[ -z "$item" ]]; then
-      continue
-    fi
-
+    [[ -n "$item" ]] || continue
     if [[ "$item" =~ ^[0-9]+$ ]]; then
       local idx=$((item))
-      if ((idx < 1 || idx > ${#commands[@]})); then
-        msg "${RED}Error: invalid command index '$item'.${NOFORMAT}"
-        exit 1
-      fi
-      selected_commands+=("${commands[$((idx-1))]}")
+      ((idx >= 1 && idx <= ${#commands[@]})) || die "Invalid command index: $item"
+      selected+=("${commands[$((idx-1))]}")
     else
       local found=false
       for cmd in "${commands[@]}"; do
         if [[ "$cmd" == "$item" ]]; then
-          selected_commands+=("$cmd")
+          selected+=("$cmd")
           found=true
           break
         fi
       done
-      if [[ "$found" == "false" ]]; then
-        msg "${RED}Error: unknown command '$item'.${NOFORMAT}"
-        exit 1
-      fi
+      [[ "$found" == "true" ]] || die "Unknown command: $item"
     fi
   done
 
-  if [[ ${#selected_commands[@]} -eq 0 ]]; then
-    ENABLED_COMMANDS="__NONE__"
+  if [[ ${#selected[@]} -eq 0 ]]; then
+    ENABLED_COMMANDS_RAW=""
     return
   fi
 
-  # De-duplicate while preserving order.
-  local deduped=()
-  for cmd in "${selected_commands[@]}"; do
+  local dedup=()
+  for cmd in "${selected[@]}"; do
     local seen=false
-    for existing in "${deduped[@]}"; do
+    for existing in "${dedup[@]}"; do
       if [[ "$existing" == "$cmd" ]]; then
         seen=true
         break
       fi
     done
-    if [[ "$seen" == "false" ]]; then
-      deduped+=("$cmd")
-    fi
+    [[ "$seen" == "false" ]] && dedup+=("$cmd")
   done
-
-  ENABLED_COMMANDS="$(IFS=','; echo "${deduped[*]}")"
+  ENABLED_COMMANDS_RAW="$(IFS=','; echo "${dedup[*]}")"
 }
 
-collect_service_allowlist() {
-  BOTTY_SERVICE_ALLOWLIST=${BOTTY_SERVICE_ALLOWLIST:-"botty"}
+service_user_shell() {
+  if [[ -x "/usr/sbin/nologin" ]]; then
+    echo "/usr/sbin/nologin"
+  elif [[ -x "/sbin/nologin" ]]; then
+    echo "/sbin/nologin"
+  else
+    echo "/bin/false"
+  fi
+}
 
-  if ! command -v systemctl &> /dev/null; then
-    msg "${YELLOW}systemctl not found; skipping service allow-list prompt.${NOFORMAT}"
+ensure_service_user() {
+  local user="$1"
+  local group="$1"
+  if id -u "$user" >/dev/null 2>&1; then
+    msg "${GREEN}✅ Service user '$user' already exists.${NOFORMAT}"
+    return
+  fi
+  local shell_path
+  shell_path="$(service_user_shell)"
+  msg "Creating system user '$user'..."
+  sudo groupadd --system "$group" 2>/dev/null || true
+  sudo useradd --system --gid "$group" --create-home --home-dir "/home/$user" --shell "$shell_path" "$user"
+  msg "${GREEN}✅ Created service user '$user'.${NOFORMAT}"
+}
+
+ensure_parent_traverse() {
+  local user="$1"
+  local path="$2"
+  local current="$path"
+  local parents=()
+  while [[ "$current" != "/" ]]; do
+    current="$(dirname "$current")"
+    parents=("$current" "${parents[@]}")
+  done
+  for parent in "${parents[@]}"; do
+    if ! sudo -u "$user" test -x "$parent" 2>/dev/null; then
+      if command -v setfacl >/dev/null 2>&1; then
+        sudo setfacl -m "u:${user}:x" "$parent"
+      else
+        die "Service user '$user' cannot traverse $parent and setfacl is unavailable."
+      fi
+    fi
+  done
+}
+
+clone_or_update_repo() {
+  if [[ "$IS_LOCAL_INSTALL" == "true" ]]; then
+    if [[ "$UPDATE" == "true" ]]; then
+      msg "\n${BOLD}Pulling latest changes in local repo...${NOFORMAT}"
+      git pull
+    else
+      msg "\n${BOLD}Using local repo as-is (use --update to pull).${NOFORMAT}"
+    fi
     return
   fi
 
-  msg "\n${BOLD}Enabled systemd services detected on this host:${NOFORMAT}"
-  mapfile -t enabled_services < <(systemctl list-unit-files --type=service --state=enabled --no-legend --no-pager 2>/dev/null | awk '{print $1}')
-  if [[ ${#enabled_services[@]} -eq 0 ]]; then
-    msg "${YELLOW}No enabled services detected (or access restricted).${NOFORMAT}"
-  else
-    for service in "${enabled_services[@]}"; do
-      msg "  - $service"
-    done
-  fi
-
-  msg "\nChoose service names that Botty may manage via /service and /logs."
-  msg "Use names exactly as you will type them in Telegram (e.g., botty, nginx, ssh)."
-  read -p "Enter BOTTY_SERVICE_ALLOWLIST (comma-separated, default: ${BOTTY_SERVICE_ALLOWLIST}): " user_services
-  if [[ -n "$(trim "$user_services")" ]]; then
-    BOTTY_SERVICE_ALLOWLIST="$user_services"
-  fi
-
-  local selected_services=()
-  parse_csv_to_array "$BOTTY_SERVICE_ALLOWLIST" selected_services
-  if [[ ${#selected_services[@]} -eq 0 ]]; then
-    selected_services=("botty")
-  fi
-
-  local normalized=()
-  for service in "${selected_services[@]}"; do
-    if ! validate_service_name "$service"; then
-      msg "${RED}Error: Invalid service name '$service' in BOTTY_SERVICE_ALLOWLIST.${NOFORMAT}"
-      exit 1
+  msg "\n${BOLD}Preparing repository in $INSTALL_DIR...${NOFORMAT}"
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    if [[ "$UPDATE" == "true" ]]; then
+      msg "${YELLOW}Existing git checkout found; pulling latest changes...${NOFORMAT}"
+      git -C "$INSTALL_DIR" pull
+    else
+      msg "${YELLOW}Existing git checkout found; skipping pull (use --update to pull).${NOFORMAT}"
     fi
-    normalized+=("$service")
-  done
-
-  BOTTY_SERVICE_ALLOWLIST="$(IFS=','; echo "${normalized[*]}")"
+  elif is_empty_dir "$INSTALL_DIR"; then
+    msg "${GREEN}Empty directory detected; cloning repository...${NOFORMAT}"
+    git clone "$GIT_REPO_URL" "$INSTALL_DIR"
+  elif [[ -f "$INSTALL_DIR/pyproject.toml" ]]; then
+    msg "${YELLOW}Using existing Python project in $INSTALL_DIR.${NOFORMAT}"
+  else
+    die "$INSTALL_DIR exists but is not empty and not a botty project."
+  fi
 }
 
-setup_sudoers_policy() {
-  local sudoers_path="/etc/sudoers.d/botty"
-  local services=()
-  parse_csv_to_array "$BOTTY_SERVICE_ALLOWLIST" services
+prepare_runtime_tree() {
+  local user="$1"
+  local group="$2"
+  local dir="$3"
+  ensure_parent_traverse "$user" "$dir"
 
-  if [[ ${#services[@]} -eq 0 ]]; then
-    services=("botty")
+  msg "${BOLD}Setting ownership and runtime permissions for $dir...${NOFORMAT}"
+  sudo chown -R "$user:$group" "$dir"
+  sudo chmod -R u=rwX,g=rX,o= "$dir"
+  sudo chmod 750 "$dir"
+}
+
+build_python_env_as_service_user() {
+  local user="$1"
+  local dir="$2"
+
+  msg "\n${BOLD}Creating Python virtual environment at $dir/.venv...${NOFORMAT}"
+  sudo -u "$user" python3 -m venv "$dir/.venv"
+
+  msg "${BOLD}Installing Python packages as $user...${NOFORMAT}"
+  sudo -u "$user" "$dir/.venv/bin/pip" install --upgrade pip
+  sudo -u "$user" "$dir/.venv/bin/pip" install -e "$dir"
+
+  sudo -u "$user" test -x "$dir/.venv/bin/python" || die "Service user '$user' cannot execute $dir/.venv/bin/python"
+  sudo -u "$user" test -x "$dir/.venv/bin/botty" || die "Service user '$user' cannot execute $dir/.venv/bin/botty"
+}
+
+write_env_file() {
+  local user="$1"
+  local group="$2"
+  local env_file="$3"
+
+  local enabled_line=""
+  if [[ "$ENABLED_COMMANDS_RAW" != "__UNSET__" ]]; then
+    enabled_line="ENABLED_COMMANDS=$ENABLED_COMMANDS_RAW"
+  fi
+  local allowlist_line="BOTTY_SERVICE_ALLOWLIST=$BOTTY_SERVICE_ALLOWLIST"
+  local sudo_pass_line=""
+  if [[ -n "${BOTTY_SUDO_PASSWORD:-}" ]]; then
+    sudo_pass_line="BOTTY_SUDO_PASSWORD=$BOTTY_SUDO_PASSWORD"
   fi
 
-  local actions=("start" "stop" "restart" "status")
+  msg "Writing $env_file..."
+  cat << EOF_ENV | sudo tee "$env_file" > /dev/null
+TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
+AUTHORIZED_USER_ID=$AUTHORIZED_USER_ID
+$enabled_line
+$allowlist_line
+$sudo_pass_line
+GOHOME_API_URL="$GOHOME_API_URL"
+EMBY_DATA_PATH="$EMBY_DATA_PATH"
+MEDIA_PATH="$MEDIA_PATH"
+EOF_ENV
+
+  sudo chown "$user:$group" "$env_file"
+  sudo chmod 600 "$env_file"
+}
+
+write_sudoers_policy() {
+  local services=()
+  parse_csv_to_array "$BOTTY_SERVICE_ALLOWLIST" services
+  [[ ${#services[@]} -gt 0 ]] || services=("botty")
+
+  local actions=(start stop restart status)
   local systemctl_entries=()
   local logs_entries=()
   for service in "${services[@]}"; do
@@ -332,265 +440,117 @@ setup_sudoers_policy() {
   joined_systemctl="$(IFS=', '; echo "${systemctl_entries[*]}")"
   joined_logs="$(IFS=', '; echo "${logs_entries[*]}")"
 
-  msg "Writing scoped sudoers policy to $sudoers_path..."
-  cat << EOL | sudo tee "$sudoers_path" > /dev/null
+  msg "Writing scoped sudoers policy at $SUDOERS_PATH..."
+  cat << EOF_SUDO | sudo tee "$SUDOERS_PATH" > /dev/null
 Cmnd_Alias BOTTY_SYSTEMCTL = $joined_systemctl
 Cmnd_Alias BOTTY_LOGS = $joined_logs
 Cmnd_Alias BOTTY_REBOOT = /usr/sbin/reboot, /usr/bin/reboot
 
 $SERVICE_USER ALL=(root) NOPASSWD: BOTTY_SYSTEMCTL, BOTTY_LOGS, BOTTY_REBOOT
-EOL
-
-  sudo chown root:root "$sudoers_path"
-  sudo chmod 440 "$sudoers_path"
-  msg "${GREEN}✅ Sudoers policy updated at $sudoers_path.${NOFORMAT}"
+EOF_SUDO
+  sudo chown root:root "$SUDOERS_PATH"
+  sudo chmod 440 "$SUDOERS_PATH"
 }
 
-ensure_service_user() {
-  local user="$1"
+write_systemd_unit() {
   local group="$1"
-  msg "\n${BOLD}Ensuring service user '$user' exists...${NOFORMAT}"
+  local env_file="$2"
+  local unit_path="/etc/systemd/system/${SERVICE_NAME}.service"
 
-  if id -u "$user" >/dev/null 2>&1; then
-    msg "${GREEN}✅ Service user '$user' already exists.${NOFORMAT}"
-    return
-  fi
-
-  msg "Creating system user '$user' (group '$group')..."
-  sudo groupadd --system "$group" 2>/dev/null || true
-  sudo useradd --system --gid "$group" --create-home --home-dir "/home/$user" --shell /usr/sbin/nologin "$user"
-  msg "${GREEN}✅ Created service user '$user'.${NOFORMAT}"
-}
-
-check_dependencies() {
-  msg "${BOLD}Checking for required dependencies...${NOFORMAT}"
-  local dependencies=("git" "python3" "pip")
-  local missing=()
-  for dep in "${dependencies[@]}"; do
-    if ! command -v "$dep" &> /dev/null; then
-      missing+=("$dep")
-    fi
-  done
-
-  if [ ${#missing[@]} -ne 0 ]; then
-    msg "${RED}Error: The following dependencies are missing: ${missing[*]}.${NOFORMAT}"
-    msg "Please install them and run the script again."
-    exit 1
-  fi
-  msg "${GREEN}✅ All dependencies are present.${NOFORMAT}"
-}
-
-get_user_input() {
-  msg "\n${BOLD}Please provide the following information:${NOFORMAT}"
-
-  # Get the installation directory
-  read -p "Enter the full path to install Botty (e.g., /home/youruser/botty): " INSTALL_DIR
-  # Use default if empty
-  INSTALL_DIR=${INSTALL_DIR:-"$HOME/botty"}
-
-  # Get secrets
-  read -sp "Enter your TELEGRAM_BOT_TOKEN: " TELEGRAM_BOT_TOKEN
-  msg "" # Newline after secret input
-      read -p "Enter your AUTHORIZED_USER_ID (comma-separated for multiple): " AUTHORIZED_USER_ID
-}
-
-clone_and_install() {
-  msg "\n${BOLD}Cloning repository into $INSTALL_DIR...${NOFORMAT}"
-  if [ -d "$INSTALL_DIR" ]; then
-    msg "${YELLOW}Warning: Directory $INSTALL_DIR already exists. Pulling latest changes.${NOFORMAT}"
-    cd "$INSTALL_DIR"
-    git pull
-    cd - > /dev/null
-  else
-    git clone "$GIT_REPO_URL" "$INSTALL_DIR"
-  fi
-
-  msg "${BOLD}Creating Python virtual environment at $INSTALL_DIR/.venv...${NOFORMAT}"
-  python3 -m venv "$INSTALL_DIR/.venv"
-
-  msg "${BOLD}Installing Python packages...${NOFORMAT}"
-  "$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
-  "$INSTALL_DIR/.venv/bin/pip" install -e "$INSTALL_DIR"
-  msg "${GREEN}✅ Python setup complete.${NOFORMAT}"
-}
-
-setup_systemd_service() {
-  if ! command -v systemctl &> /dev/null; then
-    msg "${YELLOW}Warning: systemd not found. Skipping service setup. You will need to run the bot manually.${NOFORMAT}"
-    return
-  fi
-
-  msg "\n${BOLD}Setting up systemd service...${NOFORMAT}"
-  msg "This step requires sudo privileges to create the service file."
-
-  local SERVICE_FILE_PATH="/etc/systemd/system/botty.service"
-  local ENV_FILE_PATH="$INSTALL_DIR/botty.env"
-
-  ensure_service_user "$SERVICE_USER"
-  SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
-
-  # Create the environment file
-  msg "Creating environment file at $ENV_FILE_PATH..."
-  # Use existing GOHOME_API_URL if set (e.g. from sourcing existing env file), else default
-  GOHOME_API_URL=${GOHOME_API_URL:-"http://localhost:8080/status"}
-  # Set defaults for Emby paths if not already provided via env
-  EMBY_DATA_PATH=${EMBY_DATA_PATH:-"/mnt/embydata"}
-  MEDIA_PATH=${MEDIA_PATH:-"/mnt/media"}
-  local enabled_commands_line=""
-  if [[ -n "$ENABLED_COMMANDS" ]] && [[ "$ENABLED_COMMANDS" != "__NONE__" ]]; then
-    enabled_commands_line="ENABLED_COMMANDS=$ENABLED_COMMANDS"
-  elif [[ "$ENABLED_COMMANDS" == "__NONE__" ]]; then
-    enabled_commands_line="ENABLED_COMMANDS="
-  fi
-  local service_allowlist_line=""
-  if [[ -n "$BOTTY_SERVICE_ALLOWLIST" ]]; then
-    service_allowlist_line="BOTTY_SERVICE_ALLOWLIST=$BOTTY_SERVICE_ALLOWLIST"
-  fi
-  
-  cat << EOL | sudo tee "$ENV_FILE_PATH" > /dev/null
-TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
-AUTHORIZED_USER_ID=$AUTHORIZED_USER_ID
-${enabled_commands_line}
-${service_allowlist_line}
-GOHOME_API_URL="$GOHOME_API_URL"
-EMBY_DATA_PATH="$EMBY_DATA_PATH"
-MEDIA_PATH="$MEDIA_PATH"
-EOL
-  sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$ENV_FILE_PATH"
-  sudo chmod 600 "$ENV_FILE_PATH"
-
-  # Ensure service user can read and execute the installation tree.
-  msg "Adjusting ownership for $INSTALL_DIR to $SERVICE_USER..."
-  sudo chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR"
-  ensure_service_runtime_access "$SERVICE_USER" "$SERVICE_GROUP" "$INSTALL_DIR"
-
-  # Create the service file content
-  local service_content
-  service_content=$(cat << EOL
+  msg "Writing systemd unit at $unit_path..."
+  cat << EOF_UNIT | sudo tee "$unit_path" > /dev/null
 [Unit]
 Description=Botty Telegram Bot
 After=network.target
 
 [Service]
 User=$SERVICE_USER
-Group=$SERVICE_GROUP
+Group=$group
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/.venv/bin/botty
-EnvironmentFile=$ENV_FILE_PATH
+EnvironmentFile=$env_file
 Restart=on-failure
 RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
-EOL
-)
+EOF_UNIT
+}
 
-  # Write the service file using sudo
-  msg "Creating service file at $SERVICE_FILE_PATH..."
-  echo "$service_content" | sudo tee "$SERVICE_FILE_PATH" > /dev/null
+setup_systemd_service() {
+  command -v systemctl >/dev/null 2>&1 || die "systemctl not found."
+  local group
+  group="$(id -gn "$SERVICE_USER")"
+  local env_file="$INSTALL_DIR/botty.env"
 
-  msg "Reloading systemd, enabling and starting the service..."
+  write_env_file "$SERVICE_USER" "$group" "$env_file"
+  write_systemd_unit "$group" "$env_file"
+  write_sudoers_policy
+
+  msg "Reloading and starting ${SERVICE_NAME}.service..."
   sudo systemctl daemon-reload
-  sudo systemctl enable botty.service
-  sudo systemctl restart botty.service
-  setup_sudoers_policy
-
-  msg "${GREEN}✅ Systemd service setup complete.${NOFORMAT}"
+  sudo systemctl enable "${SERVICE_NAME}.service"
+  sudo systemctl restart "${SERVICE_NAME}.service"
 }
 
 uninstall_service() {
-  msg "\n${BOLD}Uninstalling Botty service...${NOFORMAT}"
-
-  if ! command -v systemctl &> /dev/null; then
-    msg "${YELLOW}Warning: systemd not found. Nothing to uninstall via systemd.${NOFORMAT}"
-    return
-  fi
-
-  local SERVICE_NAME="botty.service"
-  local SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME"
-
-  if [ -f "$SERVICE_FILE" ]; then
-    msg "Stopping and disabling $SERVICE_NAME..."
-    sudo systemctl stop "$SERVICE_NAME" || true
-    sudo systemctl disable "$SERVICE_NAME" || true
-    
-    msg "Removing service file $SERVICE_FILE..."
-    sudo rm "$SERVICE_FILE"
-    
-    msg "Reloading systemd daemon..."
+  local unit_path="/etc/systemd/system/${SERVICE_NAME}.service"
+  if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl stop "${SERVICE_NAME}.service" || true
+    sudo systemctl disable "${SERVICE_NAME}.service" || true
+    sudo rm -f "$unit_path"
     sudo systemctl daemon-reload
     sudo systemctl reset-failed
-    
-    msg "${GREEN}✅ Systemd service uninstalled successfully.${NOFORMAT}"
-  else
-    msg "${YELLOW}Service file $SERVICE_FILE not found. It might already be uninstalled.${NOFORMAT}"
   fi
-  
-  msg "\nNote: The installation directory and your .env configuration were NOT removed."
+  sudo rm -f "$SUDOERS_PATH"
+  msg "${GREEN}✅ Uninstall complete.${NOFORMAT}"
 }
 
 main() {
   setup_colors
   require_non_root
-  check_dependencies
+  require_dependencies
 
-  # Parse arguments
-  local REINSTALL=false
-  local UNINSTALL=false
-  local UPDATE=false
-  local INSTALL_DIR_OVERRIDE=""
+  REINSTALL=false
+  UNINSTALL=false
+  UPDATE=false
+  INSTALL_DIR_OVERRIDE=""
   SERVICE_USER="$DEFAULT_SERVICE_USER"
+
   for arg in "$@"; do
-    case $arg in
-      --reinstall)
-        REINSTALL=true
-        shift
-        ;;
-      --uninstall)
-        UNINSTALL=true
-        shift
-        ;;
-      --update)
-        UPDATE=true
-        shift
-        ;;
-      --service-user=*)
-        SERVICE_USER="${arg#*=}"
-        shift
-        ;;
-      --install-dir=*)
-        INSTALL_DIR_OVERRIDE="${arg#*=}"
-        shift
-        ;;
+    case "$arg" in
+      --reinstall) REINSTALL=true ;;
+      --uninstall) UNINSTALL=true ;;
+      --update) UPDATE=true ;;
+      --service-user=*) SERVICE_USER="${arg#*=}" ;;
+      --install-dir=*) INSTALL_DIR_OVERRIDE="${arg#*=}" ;;
+      *) die "Unknown argument: $arg" ;;
     esac
   done
 
-  if [ "$UNINSTALL" = true ]; then
-    ensure_sudo_access
+  ensure_sudo_access
+
+  if [[ "$UNINSTALL" == "true" ]]; then
     uninstall_service
     exit 0
   fi
 
-  # Determine the installation directory
   if [[ -n "$INSTALL_DIR_OVERRIDE" ]]; then
     INSTALL_DIR="$INSTALL_DIR_OVERRIDE"
-    if [[ -d ".git" ]] && [[ "$INSTALL_DIR" == "$(pwd)" ]]; then
-      msg "${GREEN}Using explicit install dir: $INSTALL_DIR (current git repository).${NOFORMAT}"
+    if [[ -d ".git" && "$INSTALL_DIR" == "$(pwd)" ]]; then
       IS_LOCAL_INSTALL=true
-      msg "${YELLOW}Note: service will run as '$SERVICE_USER' and installer will chown this directory to that user.${NOFORMAT}"
+      msg "${GREEN}Using local repo install dir: $INSTALL_DIR${NOFORMAT}"
     else
-      msg "${GREEN}Using explicit install dir: $INSTALL_DIR${NOFORMAT}"
       IS_LOCAL_INSTALL=false
+      msg "${GREEN}Using explicit install dir: $INSTALL_DIR${NOFORMAT}"
     fi
-  elif [ -d ".git" ]; then
-    msg "${GREEN}Git repository detected. Installing from the current directory.${NOFORMAT}"
-    INSTALL_DIR=$(pwd)
+  elif [[ -d ".git" ]]; then
+    INSTALL_DIR="$(pwd)"
     IS_LOCAL_INSTALL=true
-    msg "${YELLOW}Note: service will run as '$SERVICE_USER' and installer will chown this directory to that user.${NOFORMAT}"
+    msg "${GREEN}Git repository detected. Installing from current directory.${NOFORMAT}"
   else
-    msg "\n${BOLD}Please provide the following information:${NOFORMAT}"
-    read -p "Enter the full path to install Botty (e.g., /opt/botty): " INSTALL_DIR
-    INSTALL_DIR=${INSTALL_DIR:-"/opt/botty"}
+    read -rp "Enter install path (default: /opt/botty): " INSTALL_DIR
+    INSTALL_DIR="${INSTALL_DIR:-/opt/botty}"
     IS_LOCAL_INSTALL=false
   fi
 
@@ -598,104 +558,45 @@ main() {
     ensure_install_dir_access "$INSTALL_DIR"
   fi
   check_noexec_mount "$INSTALL_DIR"
-  ensure_sudo_access
-  
-  # Check for existing configuration
-  local ENV_FILE="$INSTALL_DIR/botty.env"
-  if [[ -f "$ENV_FILE" ]] && [[ "$REINSTALL" == "false" ]]; then
-    msg "${GREEN}Found existing configuration at $ENV_FILE. Sourcing it.${NOFORMAT}"
-    # shellcheck source=/dev/null
-    source "$ENV_FILE"
+
+  local env_file="$INSTALL_DIR/botty.env"
+  TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+  AUTHORIZED_USER_ID="${AUTHORIZED_USER_ID:-}"
+  GOHOME_API_URL="${GOHOME_API_URL:-}"
+  EMBY_DATA_PATH="${EMBY_DATA_PATH:-}"
+  MEDIA_PATH="${MEDIA_PATH:-}"
+  ENABLED_COMMANDS_RAW="__UNSET__"
+  BOTTY_SERVICE_ALLOWLIST="${BOTTY_SERVICE_ALLOWLIST:-}"
+  BOTTY_SUDO_PASSWORD="${BOTTY_SUDO_PASSWORD:-}"
+
+  if [[ -f "$env_file" && "$REINSTALL" == "false" ]]; then
+    msg "${GREEN}Found existing config at $env_file. Loading known keys...${NOFORMAT}"
+    safe_load_env_file "$env_file"
   fi
 
-  # Get missing secrets/paths from the user
-  if [[ -z "$TELEGRAM_BOT_TOKEN" ]] || [[ -z "$AUTHORIZED_USER_ID" ]] || [[ "$REINSTALL" == "true" ]]; then
-    msg "\n${BOLD}Please provide your bot's credentials:${NOFORMAT}"
-    read -sp "Enter your TELEGRAM_BOT_TOKEN: " TELEGRAM_BOT_TOKEN
-    msg "" # Newline after secret input
-            read -p "Enter your AUTHORIZED_USER_ID (comma-separated for multiple): " AUTHORIZED_USER_ID
-      fi
-      
-      if [[ -z "$GOHOME_API_URL" ]] || [[ "$REINSTALL" == "true" ]]; then
-        read -p "Enter GoHome API URL (default: http://localhost:8080/status): " GOHOME_API_URL
-        GOHOME_API_URL=${GOHOME_API_URL:-"http://localhost:8080/status"}
-      fi
-      
-      if [[ -z "$EMBY_DATA_PATH" ]] || [[ "$REINSTALL" == "true" ]]; then
-    
-    read -p "Enter Emby data path (default: /mnt/embydata): " EMBY_DATA_PATH
-    EMBY_DATA_PATH=${EMBY_DATA_PATH:-"/mnt/embydata"}
-  fi
+  prompt_secret_if_empty TELEGRAM_BOT_TOKEN "Enter TELEGRAM_BOT_TOKEN: "
+  prompt_if_empty AUTHORIZED_USER_ID "Enter AUTHORIZED_USER_ID (comma-separated): " ""
+  prompt_if_empty GOHOME_API_URL "Enter GOHOME API URL (default: http://localhost:8080/status): " "http://localhost:8080/status"
+  prompt_if_empty EMBY_DATA_PATH "Enter Emby data path (default: /mnt/embydata): " "/mnt/embydata"
+  prompt_if_empty MEDIA_PATH "Enter media storage path (default: /mnt/media): " "/mnt/media"
 
-  if [[ -z "$MEDIA_PATH" ]] || [[ "$REINSTALL" == "true" ]]; then
-    read -p "Enter media storage path (default: /mnt/media): " MEDIA_PATH
-    MEDIA_PATH=${MEDIA_PATH:-"/mnt/media"}
-  fi
+  collect_service_allowlist
+  clone_or_update_repo
+  [[ -f "$INSTALL_DIR/pyproject.toml" ]] || die "$INSTALL_DIR is missing pyproject.toml"
 
-  if [[ "$REINSTALL" == "true" ]] || [[ -z "${BOTTY_SERVICE_ALLOWLIST+x}" ]]; then
-    collect_service_allowlist
-  fi
+  ensure_service_user "$SERVICE_USER"
+  local service_group
+  service_group="$(id -gn "$SERVICE_USER")"
 
-  # Clone or pull the repository
-  if [ "$IS_LOCAL_INSTALL" = true ]; then
-    if [ "$UPDATE" = true ]; then
-      msg "\n${BOLD}Pulling latest changes...${NOFORMAT}"
-      git pull
-    else
-      msg "\n${BOLD}Skipping git pull (use --update to pull latest changes)...${NOFORMAT}"
-    fi
-  else
-    msg "\n${BOLD}Cloning repository into $INSTALL_DIR...${NOFORMAT}"
-    if [[ -d "$INSTALL_DIR/.git" ]]; then
-      if [[ "$UPDATE" == "true" ]]; then
-        msg "${YELLOW}Directory $INSTALL_DIR already exists. Pulling latest changes.${NOFORMAT}"
-        cd "$INSTALL_DIR"
-        git pull
-        cd - > /dev/null
-      else
-        msg "${YELLOW}Directory $INSTALL_DIR already exists. Skipping pull (use --update to force pull).${NOFORMAT}"
-      fi
-    elif [[ -d "$INSTALL_DIR" ]]; then
-      if [[ -z "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
-        msg "${GREEN}Directory $INSTALL_DIR exists and is empty. Cloning repository.${NOFORMAT}"
-        git clone "$GIT_REPO_URL" "$INSTALL_DIR"
-      elif [[ -f "$INSTALL_DIR/pyproject.toml" ]]; then
-        msg "${YELLOW}Directory $INSTALL_DIR exists and looks like a Python project (no .git). Using it as-is.${NOFORMAT}"
-      else
-        msg "${RED}Error: $INSTALL_DIR exists but is not a git checkout or Python project.${NOFORMAT}"
-        msg "Either remove it, pick a different --install-dir, or clone the bot repo there first."
-        exit 1
-      fi
-    else
-      git clone "$GIT_REPO_URL" "$INSTALL_DIR"
-    fi
-  fi
-
-  if [[ ! -f "$INSTALL_DIR/pyproject.toml" ]]; then
-    msg "${RED}Error: $INSTALL_DIR is missing pyproject.toml. Aborting install.${NOFORMAT}"
-    exit 1
-  fi
-  
-  # Install dependencies
-  msg "\n${BOLD}Creating Python virtual environment at $INSTALL_DIR/.venv...${NOFORMAT}"
-  python3 -m venv "$INSTALL_DIR/.venv"
-
-  msg "${BOLD}Installing Python packages...${NOFORMAT}"
-  "$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
-  "$INSTALL_DIR/.venv/bin/pip" install -e "$INSTALL_DIR"
-  msg "${GREEN}✅ Python setup complete.${NOFORMAT}"
-
+  prepare_runtime_tree "$SERVICE_USER" "$service_group" "$INSTALL_DIR"
+  build_python_env_as_service_user "$SERVICE_USER" "$INSTALL_DIR"
   collect_enabled_commands_interactive
-
-  # Set up the service
   setup_systemd_service
 
-  msg "\n\n${GREEN}${BOLD}🎉 Botty installation finished successfully!${NOFORMAT}"
-  msg "-----------------------------------------------------"
+  msg "\n${GREEN}${BOLD}✅ Botty installation complete.${NOFORMAT}"
   msg "Service user: ${CYAN}$SERVICE_USER${NOFORMAT}"
-  msg "To check the service status, run: ${CYAN}sudo systemctl status botty.service${NOFORMAT}"
-  msg "To view live logs, run:       ${CYAN}sudo journalctl -u botty.service -f${NOFORMAT}"
+  msg "Service status: ${CYAN}sudo systemctl status ${SERVICE_NAME}.service${NOFORMAT}"
+  msg "Logs:          ${CYAN}sudo journalctl -u ${SERVICE_NAME}.service -f${NOFORMAT}"
 }
 
-# --- Run the main function ---
 main "$@"
