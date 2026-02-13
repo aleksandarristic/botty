@@ -50,12 +50,13 @@ Run the bot locally with `botty`.
 
 - `TELEGRAM_BOT_TOKEN`: token from BotFather.
 - `AUTHORIZED_USER_ID`: comma-separated list of Telegram IDs who may use the commands.
+- `ENABLED_COMMANDS`: optional comma-separated list of command names to enable (e.g., `status,network_tests`). If omitted, all commands are enabled. `/start` is always enabled.
 - `GOHOME_API_URL`: endpoint for network results (default `http://localhost:8080/status`).
 - `EMBY_DATA_PATH` / `MEDIA_PATH`: paths used for drive checks; defaults `/mnt/embydata` and `/mnt/media`.
 
 Service installations store these values in `botty.env`, whereas `.env` is used during manual runs.
 
-## Commands
+## Existing Commands
 
 All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py`. Authorization is enforced in the `Command` base class; most commands require authorization, while `/start` is public.
 
@@ -64,8 +65,34 @@ All commands are registered dynamically via the `command_registry` in `src/botty
 - `/emby_status`: fetches `systemctl status emby-server`, plus drive usage for `EMBY_DATA_PATH` and `MEDIA_PATH`.
 - `/adguard_status`: fetches `systemctl status AdGuardHome`.
 - `/network_tests`: queries the GoHome API and formats speedtest stats, ping targets, and device metrics (temperature, memory, load averages, uptime) inside fenced MarkdownV2 code blocks.
+- `/example [args...]`: demo command that shows command execution, config usage, and argument handling via `context.args`.
+- `/docker_status [compose_dir_or_file]`: reports Docker daemon info and optionally runs `docker compose ps` for a provided compose directory/file.
 
 Every textual reply is sanitized with `escape_markdown` / `escape_markdown_code` helpers in `src/botty/utils.py` to stay compatible with Telegram MarkdownV2.
+
+## Customization: Adding New Commands
+
+Botty is designed to be easily extended. To add a new command:
+
+1.  **Create a handler:** Create a new file in `src/botty/cmd/handlers/` (e.g., `my_command.py`).
+2.  **Define the class:** Inherit from the `Command` base class.
+    ```python
+    from .base import Command
+    from botty.utils import run_command, escape_markdown_code
+
+    class MyCustomCommand(Command):
+        name = "hello"
+        description = "Returns a friendly greeting and system info"
+
+        async def run(self, update, context):
+            output = await run_command(["uname", "-a"])
+            msg = f"Hello! System info: \n```\n{escape_markdown_code(output)}\n```"
+            await update.message.reply_text(msg, parse_mode="MarkdownV2")
+    ```
+3.  **Register the command:** Add your class to `ALL_COMMAND_CLASSES` in `src/botty/cmd/handlers/__init__.py`.
+4.  **Configure (Optional):** If you are using `ENABLED_COMMANDS` in your `.env`, add your new command name to the list.
+
+Refer to `src/botty/cmd/handlers/example.py` for a detailed template with more complex examples.
 
 ## Testing
 

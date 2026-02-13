@@ -8,6 +8,7 @@ from .base import Command
 
 class EmbyStatusCommand(Command):
     name = "emby_status"
+    description = "Emby media server status"
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Checks the status of Emby media server."""
@@ -33,6 +34,7 @@ class EmbyStatusCommand(Command):
 
 class AdguardStatusCommand(Command):
     name = "adguard_status"
+    description = "AdGuard Home status"
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Checks the status of AdGuard Home."""

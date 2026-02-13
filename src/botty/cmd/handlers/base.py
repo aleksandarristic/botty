@@ -7,6 +7,7 @@ class Command(ABC):
     """Base class for bot commands."""
 
     name: str
+    description: str
     auth_required: bool = True
 
     def __init__(self, config: BottyConfig) -> None:

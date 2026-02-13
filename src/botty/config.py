@@ -7,6 +7,7 @@ from typing import List
 class BottyConfig:
     telegram_bot_token: str | None
     authorized_user_ids: List[str]
+    enabled_commands: List[str] | None
     gohome_api_url: str
     gohome_timeout_seconds: float
     emby_data_path: str
@@ -18,9 +19,19 @@ class BottyConfig:
         authorized_user_ids = [
             uid.strip() for uid in auth_env.split(",") if uid.strip()
         ]
+
+        enabled_cmd_env = os.getenv("ENABLED_COMMANDS")
+        if enabled_cmd_env is not None:
+            enabled_commands = [
+                cmd.strip() for cmd in enabled_cmd_env.split(",") if cmd.strip()
+            ]
+        else:
+            enabled_commands = None
+
         return cls(
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN"),
             authorized_user_ids=authorized_user_ids,
+            enabled_commands=enabled_commands,
             gohome_api_url=os.getenv("GOHOME_API_URL", "http://localhost:8080/status"),
             gohome_timeout_seconds=float(os.getenv("GOHOME_TIMEOUT_SECONDS", "10")),
             emby_data_path=os.getenv("EMBY_DATA_PATH", "/mnt/embydata"),

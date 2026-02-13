@@ -1,6 +1,9 @@
+import html
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from botty.config import BottyConfig
 from botty.services.system_checks import get_status_checks
 from botty.utils import escape_markdown_code
 from .base import Command
@@ -8,23 +11,32 @@ from .base import Command
 
 class StartCommand(Command):
     name = "start"
+    description = "Shows this message"
     auth_required = False
+
+    def __init__(self, config: BottyConfig, commands: list[Command]) -> None:
+        super().__init__(config)
+        self.commands = commands
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Sends a message when the command /start is issued."""
         user = update.effective_user
+        commands_list = "\n".join(
+            [
+                f"/{html.escape(str(cmd.name), quote=True)} - "
+                f"{html.escape(str(cmd.description), quote=True)}"
+                for cmd in self.commands
+            ]
+        )
         await update.message.reply_html(
             rf"Hi {user.mention_html()}! Here are the available commands:"
-            "\n/start - Shows this message"
-            "\n/status - General server health"
-            "\n/emby_status - Emby media server status"
-            "\n/adguard_status - AdGuard Home status"
-            "\n/network_tests - Latest network test results"
+            f"\n{commands_list}"
         )
 
 
 class StatusCommand(Command):
     name = "status"
+    description = "General server health"
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Provides a general server health check."""

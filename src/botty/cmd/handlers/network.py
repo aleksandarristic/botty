@@ -13,6 +13,7 @@ from .base import Command
 
 class NetworkTestsCommand(Command):
     name = "network_tests"
+    description = "Latest network test results"
 
     _cache_ttl_seconds = 30.0
     _cache_timestamp: float | None = None

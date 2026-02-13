@@ -2,7 +2,7 @@ import logging
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler
 
-from botty.cmd import command_registry
+from botty.cmd import get_command_registry
 from botty.config import BottyConfig
 
 # Load environment variables from .env file
@@ -22,6 +22,7 @@ def main() -> None:
     application = Application.builder().token(config.telegram_bot_token).build()
 
     # Register all commands from the command registry
+    command_registry = get_command_registry(config)
     for command_name, handler in command_registry:
         application.add_handler(CommandHandler(command_name, handler))
 

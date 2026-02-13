@@ -2,17 +2,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from botty.cmd.handlers import network_tests_command
-from botty.cmd.handlers import config as handler_config
+from botty.config import BottyConfig
+from botty.cmd.handlers import NetworkTestsCommand
 
 
 @pytest.mark.asyncio
 @patch("botty.services.http.httpx.AsyncClient")
 async def test_network_tests_integration(MockAsyncClient, monkeypatch):
-    handler_config.authorized_user_ids = ["123"]
-    handler_config.gohome_api_url = "http://stub/status"
-    network_tests_command._cache_timestamp = None
-    network_tests_command._cache_message = None
+    config = BottyConfig(
+        telegram_bot_token="test_token",
+        authorized_user_ids=["123"],
+        enabled_commands=None,
+        gohome_api_url="http://stub/status",
+        gohome_timeout_seconds=10.0,
+        emby_data_path="/mnt/embydata",
+        media_path="/mnt/media",
+    )
+    cmd = NetworkTestsCommand(config)
+    cmd._cache_timestamp = None
+    cmd._cache_message = None
 
     mock_response = MagicMock()
     mock_response.json.return_value = {
@@ -35,7 +43,7 @@ async def test_network_tests_integration(MockAsyncClient, monkeypatch):
     update.effective_user.id = 123
     update.message.reply_text = AsyncMock()
 
-    await network_tests_command.handle(update, None)
+    await cmd.handle(update, None)
 
     mock_get.assert_called_once_with("http://stub/status")
     update.message.reply_text.assert_called_once()

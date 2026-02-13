@@ -2,17 +2,35 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from botty.cmd import get_command_registry
+from botty.cmd.handlers.base import Command
+from botty.config import BottyConfig
 from botty.cmd.handlers import (
-    adguard_status_command,
-    config as handler_config,
-    emby_status_command,
-    network_tests_command,
-    start_command,
-    status_command,
+    AdguardStatusCommand,
+    DockerStatusCommand,
+    EmbyStatusCommand,
+    ExampleCommand,
+    NetworkTestsCommand,
+    StartCommand,
+    StatusCommand,
 )
 
 # Set a consistent authorized user ID for testing
 TEST_AUTHORIZED_USER_ID = "12345"
+
+
+@pytest.fixture
+def test_config():
+    """Fixture to create a standard test config."""
+    return BottyConfig(
+        telegram_bot_token="test_token",
+        authorized_user_ids=[TEST_AUTHORIZED_USER_ID],
+        enabled_commands=None,
+        gohome_api_url="http://localhost:8080/status",
+        gohome_timeout_seconds=10.0,
+        emby_data_path="/mnt/embydata",
+        media_path="/mnt/media",
+    )
 
 
 @pytest.fixture
@@ -26,24 +44,56 @@ def mock_update():
 
 
 @pytest.mark.asyncio
-async def test_start_command(mock_update, monkeypatch):
-    handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
+async def test_start_command(mock_update, test_config):
     """Test the /start command handler."""
-    await start_command.handle(mock_update, None)
+    status_cmd = StatusCommand(test_config)
+    cmd = StartCommand(test_config, [status_cmd])
+    await cmd.handle(mock_update, None)
     mock_update.message.reply_html.assert_called_once()
     call_args = mock_update.message.reply_html.call_args[0][0]
     assert "Hi" in call_args
-    assert "/start" in call_args
+    assert "/status" in call_args
 
 
 @pytest.mark.asyncio
-async def test_unauthorized_user(mock_update, monkeypatch):
+async def test_start_command_escapes_html(mock_update, test_config):
+    class HtmlCommand(Command):
+        name = "x<y"
+        description = "Dangerous <b>tag</b> & value"
+
+        async def run(self, update, context):
+            return None
+
+    cmd = StartCommand(test_config, [HtmlCommand(test_config)])
+    await cmd.handle(mock_update, None)
+
+    call_args = mock_update.message.reply_html.call_args[0][0]
+    assert "/x&lt;y - Dangerous &lt;b&gt;tag&lt;/b&gt; &amp; value" in call_args
+
+
+def test_registry_fills_missing_description(test_config, monkeypatch):
+    class NoDescriptionCommand(Command):
+        name = "no_description"
+
+        async def run(self, update, context):
+            return None
+
+    monkeypatch.setattr("botty.cmd.ALL_COMMAND_CLASSES", [NoDescriptionCommand])
+    registry = get_command_registry(test_config)
+    handlers = dict(registry)
+    command_instance = handlers["no_description"].__self__
+    assert command_instance.description == "No description provided."
+
+
+@pytest.mark.asyncio
+async def test_unauthorized_user(mock_update, test_config):
     """Test that an unauthorized user is rejected."""
-    handler_config.authorized_user_ids = ["a_different_id"]
+    test_config.authorized_user_ids = ["a_different_id"]
     mock_update.effective_user.id = 99999  # Unauthorized ID
 
+    cmd = StatusCommand(test_config)
     # We can test any command that has the auth check
-    await status_command.handle(mock_update, None)
+    await cmd.handle(mock_update, None)
 
     mock_update.message.reply_text.assert_called_once_with(
         "You are not authorized to use this command."
@@ -52,12 +102,12 @@ async def test_unauthorized_user(mock_update, monkeypatch):
 
 @pytest.mark.asyncio
 @patch("botty.cmd.handlers.status.get_status_checks")
-async def test_status_command(mock_run_command, mock_update, monkeypatch):
+async def test_status_command(mock_run_command, mock_update, test_config):
     """Test the /status command handler."""
-    handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
     mock_run_command.return_value = ("up 2 days", "disk usage /", "memory usage")
 
-    await status_command.handle(mock_update, None)
+    cmd = StatusCommand(test_config)
+    await cmd.handle(mock_update, None)
 
     mock_run_command.assert_called_once_with()
 
@@ -70,11 +120,10 @@ async def test_status_command(mock_run_command, mock_update, monkeypatch):
 
 @pytest.mark.asyncio
 @patch("botty.cmd.handlers.media.get_emby_checks")
-async def test_emby_status_command(mock_run_command, mock_update, monkeypatch):
+async def test_emby_status_command(mock_run_command, mock_update, test_config):
     """Test the /emby_status command handler."""
-    handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
-    handler_config.emby_data_path = "/fake/embydata"
-    handler_config.media_path = "/fake/media"
+    test_config.emby_data_path = "/fake/embydata"
+    test_config.media_path = "/fake/media"
 
     mock_run_command.return_value = (
         "emby is running",
@@ -82,9 +131,10 @@ async def test_emby_status_command(mock_run_command, mock_update, monkeypatch):
         "media usage",
     )
 
-    await emby_status_command.handle(mock_update, None)
+    cmd = EmbyStatusCommand(test_config)
+    await cmd.handle(mock_update, None)
 
-    mock_run_command.assert_called_once_with(handler_config)
+    mock_run_command.assert_called_once_with(test_config)
 
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]
@@ -95,12 +145,12 @@ async def test_emby_status_command(mock_run_command, mock_update, monkeypatch):
 
 @pytest.mark.asyncio
 @patch("botty.cmd.handlers.media.get_adguard_checks")
-async def test_adguard_status_command(mock_run_command, mock_update, monkeypatch):
+async def test_adguard_status_command(mock_run_command, mock_update, test_config):
     """Test the /adguard_status command handler."""
-    handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
     mock_run_command.return_value = "adguard is running"
 
-    await adguard_status_command.handle(mock_update, None)
+    cmd = AdguardStatusCommand(test_config)
+    await cmd.handle(mock_update, None)
 
     mock_run_command.assert_called_once_with()
     mock_update.message.reply_text.assert_called_once()
@@ -110,12 +160,12 @@ async def test_adguard_status_command(mock_run_command, mock_update, monkeypatch
 
 @pytest.mark.asyncio
 @patch("botty.services.http.httpx.AsyncClient")
-async def test_network_tests_command_success(MockAsyncClient, mock_update, monkeypatch):
+async def test_network_tests_command_success(MockAsyncClient, mock_update, test_config):
     """Test the /network_tests command on a successful API call."""
-    handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
-    handler_config.gohome_api_url = "http://example.local/status"
-    network_tests_command._cache_timestamp = None
-    network_tests_command._cache_message = None
+    test_config.gohome_api_url = "http://example.local/status"
+    cmd = NetworkTestsCommand(test_config)
+    cmd._cache_timestamp = None
+    cmd._cache_message = None
     mock_response = MagicMock()
     mock_response.json.return_value = {
         "speedtest": {
@@ -148,9 +198,9 @@ async def test_network_tests_command_success(MockAsyncClient, mock_update, monke
     mock_get = AsyncMock(return_value=mock_response)
     MockAsyncClient.return_value.__aenter__.return_value.get = mock_get
 
-    await network_tests_command.handle(mock_update, None)
+    await cmd.handle(mock_update, None)
 
-    mock_get.assert_called_once_with(handler_config.gohome_api_url)
+    mock_get.assert_called_once_with(test_config.gohome_api_url)
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args[0][0]
 
@@ -166,17 +216,76 @@ async def test_network_tests_command_success(MockAsyncClient, mock_update, monke
 
 @pytest.mark.asyncio
 @patch("botty.services.http.httpx.AsyncClient")
-async def test_network_tests_command_failure(MockAsyncClient, mock_update, monkeypatch):
+async def test_network_tests_command_failure(MockAsyncClient, mock_update, test_config):
     """Test the /network_tests command on a failed API call."""
-    handler_config.authorized_user_ids = [TEST_AUTHORIZED_USER_ID]
-    network_tests_command._cache_timestamp = None
-    network_tests_command._cache_message = None
+    cmd = NetworkTestsCommand(test_config)
+    cmd._cache_timestamp = None
+    cmd._cache_message = None
     mock_get = AsyncMock()
     mock_get.side_effect = Exception("Test API failure")
     MockAsyncClient.return_value.__aenter__.return_value.get = mock_get
 
-    await network_tests_command.handle(mock_update, None)
+    await cmd.handle(mock_update, None)
 
     mock_update.message.reply_text.assert_called_once_with(
         "An error occurred: Test API failure", parse_mode="MarkdownV2"
     )
+
+
+@pytest.mark.asyncio
+@patch("botty.cmd.handlers.example.run_command", new_callable=AsyncMock)
+async def test_example_command_with_args(mock_run_command, mock_update, test_config):
+    mock_run_command.return_value = "up 10 minutes"
+    context = MagicMock()
+    context.args = ["hello", "world"]
+
+    cmd = ExampleCommand(test_config)
+    await cmd.handle(mock_update, context)
+
+    mock_run_command.assert_called_once_with(["uptime", "-p"])
+    call_args = mock_update.message.reply_text.call_args[0][0]
+    assert "up 10 minutes" in call_args
+    assert "hello world" in call_args
+
+
+@pytest.mark.asyncio
+@patch("botty.cmd.handlers.docker.os.path.isfile")
+@patch("botty.cmd.handlers.docker.run_command", new_callable=AsyncMock)
+async def test_docker_status_with_directory(
+    mock_run_command, mock_isfile, mock_update, test_config
+):
+    mock_run_command.side_effect = ["docker info ok", "compose ps ok"]
+    mock_isfile.side_effect = lambda p: p.endswith("docker-compose.yml")
+    context = MagicMock()
+    context.args = ["/opt/stacks/home"]
+
+    cmd = DockerStatusCommand(test_config)
+    await cmd.handle(mock_update, context)
+
+    assert mock_run_command.call_count == 2
+    assert mock_run_command.call_args_list[0].args[0] == ["docker", "info"]
+    assert mock_run_command.call_args_list[1].args[0] == [
+        "docker",
+        "compose",
+        "-f",
+        "/opt/stacks/home/docker-compose.yml",
+        "ps",
+    ]
+    call_args = mock_update.message.reply_text.call_args[0][0]
+    assert "docker info ok" in call_args
+    assert "compose ps ok" in call_args
+
+
+@pytest.mark.asyncio
+@patch("botty.cmd.handlers.docker.run_command", new_callable=AsyncMock)
+async def test_docker_status_without_directory(mock_run_command, mock_update, test_config):
+    mock_run_command.return_value = "docker info ok"
+    context = MagicMock()
+    context.args = []
+
+    cmd = DockerStatusCommand(test_config)
+    await cmd.handle(mock_update, context)
+
+    mock_run_command.assert_called_once_with(["docker", "info"])
+    call_args = mock_update.message.reply_text.call_args[0][0]
+    assert "Not requested. Pass a directory or compose file path." in call_args
