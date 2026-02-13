@@ -34,6 +34,41 @@ msg() {
 
 # --- Main Logic ---
 
+require_non_root() {
+  if [[ "$EUID" -eq 0 ]]; then
+    msg "${RED}Error: Do not run install.sh with sudo/root.${NOFORMAT}"
+    msg "Run it as your normal user."
+    msg "The script will invoke sudo only for privileged steps."
+    exit 1
+  fi
+}
+
+ensure_install_dir_access() {
+  local install_dir="$1"
+  local owner_user
+  owner_user="$(id -un)"
+  local owner_group
+  owner_group="$(id -gn)"
+
+  if [[ ! -e "$install_dir" ]]; then
+    msg "${YELLOW}Install directory $install_dir does not exist. Creating it with sudo...${NOFORMAT}"
+    sudo mkdir -p "$install_dir"
+    sudo chown "$owner_user:$owner_group" "$install_dir"
+    sudo chmod 755 "$install_dir"
+    return
+  fi
+
+  if [[ ! -d "$install_dir" ]]; then
+    msg "${RED}Error: $install_dir exists but is not a directory.${NOFORMAT}"
+    exit 1
+  fi
+
+  if [[ ! -w "$install_dir" ]]; then
+    msg "${YELLOW}Install directory $install_dir is not writable by $owner_user. Fixing ownership with sudo...${NOFORMAT}"
+    sudo chown -R "$owner_user:$owner_group" "$install_dir"
+  fi
+}
+
 trim() {
   local s="$1"
   # shellcheck disable=SC2001
@@ -57,6 +92,120 @@ parse_csv_to_array() {
 validate_service_name() {
   local service="$1"
   [[ "$service" =~ ^[a-zA-Z0-9_.@-]+$ ]]
+}
+
+collect_enabled_commands_interactive() {
+  local commands=()
+  mapfile -t commands < <("$INSTALL_DIR/.venv/bin/python" - "$INSTALL_DIR" << 'PY'
+import sys
+from pathlib import Path
+
+install_dir = Path(sys.argv[1])
+sys.path.insert(0, str(install_dir / "src"))
+
+from botty.cmd.handlers import ALL_COMMAND_CLASSES  # noqa: E402
+
+for cmd_class in ALL_COMMAND_CLASSES:
+    print(cmd_class.name)
+PY
+  )
+
+  if [[ ${#commands[@]} -eq 0 ]]; then
+    msg "${YELLOW}Could not discover command list automatically. Keeping existing ENABLED_COMMANDS.${NOFORMAT}"
+    return
+  fi
+
+  local current_display="all commands"
+  if [[ -n "${ENABLED_COMMANDS+x}" ]] && [[ -n "$ENABLED_COMMANDS" ]]; then
+    current_display="$ENABLED_COMMANDS"
+  elif [[ -n "${ENABLED_COMMANDS+x}" ]] && [[ -z "$ENABLED_COMMANDS" ]]; then
+    current_display="none (except /start)"
+  fi
+
+  msg "\n${BOLD}Interactive Bot Command Selection${NOFORMAT}"
+  msg "Current selection: ${CYAN}$current_display${NOFORMAT}"
+  msg "Available commands:"
+  local i=1
+  for cmd in "${commands[@]}"; do
+    msg "  [$i] $cmd"
+    ((i++))
+  done
+  msg "Choose by comma-separated numbers or names."
+  msg "Examples: 1,3,5   OR   status,network_tests"
+  msg "Special values: 'all' (enable all), 'none' (disable all except /start), Enter (keep current)"
+
+  read -p "Enter ENABLED_COMMANDS selection: " selection_raw
+  local selection
+  selection="$(trim "$selection_raw")"
+
+  if [[ -z "$selection" ]]; then
+    return
+  fi
+
+  local lowered
+  lowered="$(echo "$selection" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$lowered" == "all" ]]; then
+    ENABLED_COMMANDS=""
+    unset ENABLED_COMMANDS
+    return
+  fi
+  if [[ "$lowered" == "none" ]]; then
+    ENABLED_COMMANDS="__NONE__"
+    return
+  fi
+
+  local selected_commands=()
+  IFS=',' read -r -a selected_items <<< "$selection"
+  for item in "${selected_items[@]}"; do
+    item="$(trim "$item")"
+    if [[ -z "$item" ]]; then
+      continue
+    fi
+
+    if [[ "$item" =~ ^[0-9]+$ ]]; then
+      local idx=$((item))
+      if ((idx < 1 || idx > ${#commands[@]})); then
+        msg "${RED}Error: invalid command index '$item'.${NOFORMAT}"
+        exit 1
+      fi
+      selected_commands+=("${commands[$((idx-1))]}")
+    else
+      local found=false
+      for cmd in "${commands[@]}"; do
+        if [[ "$cmd" == "$item" ]]; then
+          selected_commands+=("$cmd")
+          found=true
+          break
+        fi
+      done
+      if [[ "$found" == "false" ]]; then
+        msg "${RED}Error: unknown command '$item'.${NOFORMAT}"
+        exit 1
+      fi
+    fi
+  done
+
+  if [[ ${#selected_commands[@]} -eq 0 ]]; then
+    ENABLED_COMMANDS="__NONE__"
+    return
+  fi
+
+  # De-duplicate while preserving order.
+  local deduped=()
+  for cmd in "${selected_commands[@]}"; do
+    local seen=false
+    for existing in "${deduped[@]}"; do
+      if [[ "$existing" == "$cmd" ]]; then
+        seen=true
+        break
+      fi
+    done
+    if [[ "$seen" == "false" ]]; then
+      deduped+=("$cmd")
+    fi
+  done
+
+  ENABLED_COMMANDS="$(IFS=','; echo "${deduped[*]}")"
 }
 
 collect_service_allowlist() {
@@ -230,8 +379,10 @@ setup_systemd_service() {
   EMBY_DATA_PATH=${EMBY_DATA_PATH:-"/mnt/embydata"}
   MEDIA_PATH=${MEDIA_PATH:-"/mnt/media"}
   local enabled_commands_line=""
-  if [[ -n "$ENABLED_COMMANDS" ]]; then
+  if [[ -n "$ENABLED_COMMANDS" ]] && [[ "$ENABLED_COMMANDS" != "__NONE__" ]]; then
     enabled_commands_line="ENABLED_COMMANDS=$ENABLED_COMMANDS"
+  elif [[ "$ENABLED_COMMANDS" == "__NONE__" ]]; then
+    enabled_commands_line="ENABLED_COMMANDS="
   fi
   local service_allowlist_line=""
   if [[ -n "$BOTTY_SERVICE_ALLOWLIST" ]]; then
@@ -322,6 +473,7 @@ uninstall_service() {
 
 main() {
   setup_colors
+  require_non_root
   check_dependencies
 
   # Parse arguments
@@ -382,6 +534,10 @@ main() {
     INSTALL_DIR=${INSTALL_DIR:-"/opt/botty"}
     IS_LOCAL_INSTALL=false
   fi
+
+  if [[ "$IS_LOCAL_INSTALL" != "true" ]]; then
+    ensure_install_dir_access "$INSTALL_DIR"
+  fi
   
   # Check for existing configuration
   local ENV_FILE="$INSTALL_DIR/botty.env"
@@ -415,9 +571,6 @@ main() {
     MEDIA_PATH=${MEDIA_PATH:-"/mnt/media"}
   fi
 
-  if [[ "$REINSTALL" == "true" ]] || [[ -z "${ENABLED_COMMANDS+x}" ]]; then
-    read -p "Enter ENABLED_COMMANDS (comma-separated, optional; leave empty to enable all): " ENABLED_COMMANDS
-  fi
   if [[ "$REINSTALL" == "true" ]] || [[ -z "${BOTTY_SERVICE_ALLOWLIST+x}" ]]; then
     collect_service_allowlist
   fi
@@ -432,8 +585,8 @@ main() {
     fi
   else
     msg "\n${BOLD}Cloning repository into $INSTALL_DIR...${NOFORMAT}"
-    if [ -d "$INSTALL_DIR" ]; then
-      if [ "$UPDATE" = true ]; then
+    if [[ -d "$INSTALL_DIR/.git" ]]; then
+      if [[ "$UPDATE" == "true" ]]; then
         msg "${YELLOW}Directory $INSTALL_DIR already exists. Pulling latest changes.${NOFORMAT}"
         cd "$INSTALL_DIR"
         git pull
@@ -441,9 +594,25 @@ main() {
       else
         msg "${YELLOW}Directory $INSTALL_DIR already exists. Skipping pull (use --update to force pull).${NOFORMAT}"
       fi
+    elif [[ -d "$INSTALL_DIR" ]]; then
+      if [[ -z "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
+        msg "${GREEN}Directory $INSTALL_DIR exists and is empty. Cloning repository.${NOFORMAT}"
+        git clone "$GIT_REPO_URL" "$INSTALL_DIR"
+      elif [[ -f "$INSTALL_DIR/pyproject.toml" ]]; then
+        msg "${YELLOW}Directory $INSTALL_DIR exists and looks like a Python project (no .git). Using it as-is.${NOFORMAT}"
+      else
+        msg "${RED}Error: $INSTALL_DIR exists but is not a git checkout or Python project.${NOFORMAT}"
+        msg "Either remove it, pick a different --install-dir, or clone the bot repo there first."
+        exit 1
+      fi
     else
       git clone "$GIT_REPO_URL" "$INSTALL_DIR"
     fi
+  fi
+
+  if [[ ! -f "$INSTALL_DIR/pyproject.toml" ]]; then
+    msg "${RED}Error: $INSTALL_DIR is missing pyproject.toml. Aborting install.${NOFORMAT}"
+    exit 1
   fi
   
   # Install dependencies
@@ -454,6 +623,8 @@ main() {
   "$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
   "$INSTALL_DIR/.venv/bin/pip" install -e "$INSTALL_DIR"
   msg "${GREEN}✅ Python setup complete.${NOFORMAT}"
+
+  collect_enabled_commands_interactive
 
   # Set up the service
   setup_systemd_service
