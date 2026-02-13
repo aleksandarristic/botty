@@ -4,6 +4,7 @@ from .example import ExampleCommand
 from .media import EmbyStatusCommand
 from .network import NetworkTestsCommand
 from .status import StartCommand, StatusCommand
+from .system_control import RebootCommand, ServiceCommand
 
 # List of command classes that can be optionally enabled via configuration.
 # StartCommand is excluded here as it is always enabled and handled specially.
@@ -14,6 +15,8 @@ ALL_COMMAND_CLASSES = [
     NetworkTestsCommand,
     ExampleCommand,
     DockerStatusCommand,
+    RebootCommand,
+    ServiceCommand,
 ]
 
 # Define the public API for this subpackage.
@@ -24,6 +27,8 @@ __all__ = [
     "ExampleCommand",
     "EmbyStatusCommand",
     "NetworkTestsCommand",
+    "RebootCommand",
+    "ServiceCommand",
     "StartCommand",
     "StatusCommand",
     "ALL_COMMAND_CLASSES",
