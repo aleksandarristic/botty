@@ -60,9 +60,9 @@ class StartCommand(Command):
             sections.append("<b>Other</b>\n" + "\n".join(grouped["Other"]))
 
         await message.reply_html(
-            rf"Hi {greeting}!<br/><br/>"
-            f"<b>Available Commands</b><br/><br/>"
-            + "<br/><br/>".join(sections)
+            rf"Hi {greeting}!\n\n"
+            f"<b>Available Commands</b>\n\n"
+            + "\n\n".join(sections)
         )
 
 
