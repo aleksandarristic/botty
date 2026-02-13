@@ -34,6 +34,111 @@ msg() {
 
 # --- Main Logic ---
 
+trim() {
+  local s="$1"
+  # shellcheck disable=SC2001
+  s="$(echo "$s" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  echo "$s"
+}
+
+parse_csv_to_array() {
+  local input="$1"
+  local -n out_ref="$2"
+  out_ref=()
+  IFS=',' read -r -a raw_items <<< "$input"
+  for item in "${raw_items[@]}"; do
+    item="$(trim "$item")"
+    if [[ -n "$item" ]]; then
+      out_ref+=("$item")
+    fi
+  done
+}
+
+validate_service_name() {
+  local service="$1"
+  [[ "$service" =~ ^[a-zA-Z0-9_.@-]+$ ]]
+}
+
+collect_service_allowlist() {
+  BOTTY_SERVICE_ALLOWLIST=${BOTTY_SERVICE_ALLOWLIST:-"botty"}
+
+  if ! command -v systemctl &> /dev/null; then
+    msg "${YELLOW}systemctl not found; skipping service allow-list prompt.${NOFORMAT}"
+    return
+  fi
+
+  msg "\n${BOLD}Enabled systemd services detected on this host:${NOFORMAT}"
+  mapfile -t enabled_services < <(systemctl list-unit-files --type=service --state=enabled --no-legend --no-pager 2>/dev/null | awk '{print $1}')
+  if [[ ${#enabled_services[@]} -eq 0 ]]; then
+    msg "${YELLOW}No enabled services detected (or access restricted).${NOFORMAT}"
+  else
+    for service in "${enabled_services[@]}"; do
+      msg "  - $service"
+    done
+  fi
+
+  msg "\nChoose service names that Botty may manage via /service and /logs."
+  msg "Use names exactly as you will type them in Telegram (e.g., botty, nginx, ssh)."
+  read -p "Enter BOTTY_SERVICE_ALLOWLIST (comma-separated, default: ${BOTTY_SERVICE_ALLOWLIST}): " user_services
+  if [[ -n "$(trim "$user_services")" ]]; then
+    BOTTY_SERVICE_ALLOWLIST="$user_services"
+  fi
+
+  local selected_services=()
+  parse_csv_to_array "$BOTTY_SERVICE_ALLOWLIST" selected_services
+  if [[ ${#selected_services[@]} -eq 0 ]]; then
+    selected_services=("botty")
+  fi
+
+  local normalized=()
+  for service in "${selected_services[@]}"; do
+    if ! validate_service_name "$service"; then
+      msg "${RED}Error: Invalid service name '$service' in BOTTY_SERVICE_ALLOWLIST.${NOFORMAT}"
+      exit 1
+    fi
+    normalized+=("$service")
+  done
+
+  BOTTY_SERVICE_ALLOWLIST="$(IFS=','; echo "${normalized[*]}")"
+}
+
+setup_sudoers_policy() {
+  local sudoers_path="/etc/sudoers.d/botty"
+  local services=()
+  parse_csv_to_array "$BOTTY_SERVICE_ALLOWLIST" services
+
+  if [[ ${#services[@]} -eq 0 ]]; then
+    services=("botty")
+  fi
+
+  local actions=("start" "stop" "restart" "status")
+  local systemctl_entries=()
+  local logs_entries=()
+  for service in "${services[@]}"; do
+    for action in "${actions[@]}"; do
+      systemctl_entries+=("/usr/bin/systemctl $action $service")
+    done
+    logs_entries+=("/usr/bin/journalctl -u $service -n 20 --no-pager")
+  done
+
+  local joined_systemctl joined_logs
+  joined_systemctl="$(IFS=', '; echo "${systemctl_entries[*]}")"
+  joined_logs="$(IFS=', '; echo "${logs_entries[*]}")"
+
+  msg "Writing scoped sudoers policy to $sudoers_path..."
+  cat << EOL | sudo tee "$sudoers_path" > /dev/null
+Cmnd_Alias BOTTY_SYSTEMCTL = $joined_systemctl
+Cmnd_Alias BOTTY_LOGS = $joined_logs
+Cmnd_Alias BOTTY_REBOOT = /usr/sbin/reboot, /usr/bin/reboot
+
+$SERVICE_USER ALL=(root) NOPASSWD: BOTTY_SYSTEMCTL, BOTTY_LOGS, BOTTY_REBOOT
+EOL
+
+  sudo chown root:root "$sudoers_path"
+  sudo chmod 440 "$sudoers_path"
+  msg "${GREEN}✅ Sudoers policy updated at $sudoers_path.${NOFORMAT}"
+}
+
 ensure_service_user() {
   local user="$1"
   local group="$1"
@@ -128,11 +233,16 @@ setup_systemd_service() {
   if [[ -n "$ENABLED_COMMANDS" ]]; then
     enabled_commands_line="ENABLED_COMMANDS=$ENABLED_COMMANDS"
   fi
+  local service_allowlist_line=""
+  if [[ -n "$BOTTY_SERVICE_ALLOWLIST" ]]; then
+    service_allowlist_line="BOTTY_SERVICE_ALLOWLIST=$BOTTY_SERVICE_ALLOWLIST"
+  fi
   
   cat << EOL | sudo tee "$ENV_FILE_PATH" > /dev/null
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 AUTHORIZED_USER_ID=$AUTHORIZED_USER_ID
 ${enabled_commands_line}
+${service_allowlist_line}
 GOHOME_API_URL="$GOHOME_API_URL"
 EMBY_DATA_PATH="$EMBY_DATA_PATH"
 MEDIA_PATH="$MEDIA_PATH"
@@ -174,6 +284,7 @@ EOL
   sudo systemctl daemon-reload
   sudo systemctl enable botty.service
   sudo systemctl restart botty.service
+  setup_sudoers_policy
 
   msg "${GREEN}✅ Systemd service setup complete.${NOFORMAT}"
 }
@@ -306,6 +417,9 @@ main() {
 
   if [[ "$REINSTALL" == "true" ]] || [[ -z "${ENABLED_COMMANDS+x}" ]]; then
     read -p "Enter ENABLED_COMMANDS (comma-separated, optional; leave empty to enable all): " ENABLED_COMMANDS
+  fi
+  if [[ "$REINSTALL" == "true" ]] || [[ -z "${BOTTY_SERVICE_ALLOWLIST+x}" ]]; then
+    collect_service_allowlist
   fi
 
   # Clone or pull the repository

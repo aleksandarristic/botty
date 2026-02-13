@@ -16,9 +16,11 @@ When run from within the repository, `./install.sh` detects the local tree, prom
 
 1. Prompts for or sources `TELEGRAM_BOT_TOKEN` and one or more comma-separated `AUTHORIZED_USER_ID`s.
 2. Prompts for optional service-specific values (`GOHOME_API_URL`, `EMBY_DATA_PATH`, `MEDIA_PATH`) when not already set.
-3. Creates/uses a dedicated service account (default: `botty`).
-4. Creates `<install_dir>/.venv`, installs `botty` in editable mode, and writes a `botty.env` file.
-5. Registers `/etc/systemd/system/botty.service` with `User=botty`, reloads the daemon, enables, and restarts the service.
+3. Lists enabled systemd services and prompts for `BOTTY_SERVICE_ALLOWLIST` (services Botty may manage).
+4. Creates/uses a dedicated service account (default: `botty`).
+5. Creates `<install_dir>/.venv`, installs `botty` in editable mode, and writes a `botty.env` file.
+6. Registers `/etc/systemd/system/botty.service` with the selected service user, reloads the daemon, enables, and restarts the service.
+7. Generates a scoped sudoers policy in `/etc/sudoers.d/botty` based on the selected service allow-list.
 
 Additional flags:
 
@@ -58,6 +60,7 @@ Run the bot locally with `botty`.
 - `ENABLED_COMMANDS`: optional comma-separated list of command names to enable (e.g., `status,network_tests`). If omitted, all commands are enabled. `/start` is always enabled.
 - `GOHOME_API_URL`: endpoint for network results (default `http://localhost:8080/status`).
 - `EMBY_DATA_PATH` / `MEDIA_PATH`: paths used for drive checks; defaults `/mnt/embydata` and `/mnt/media`.
+- `BOTTY_SERVICE_ALLOWLIST`: comma-separated service names allowed for `/service` and `/logs` sudo policy (for example `botty,nginx`).
 - `BOTTY_SUDO_PASSWORD`: optional sudo password used for privileged commands when command handlers enable `sudo=True`.
 
 Service installations store these values in `botty.env`, whereas `.env` is used during manual runs. Keep `botty.env` private and out of version control.
@@ -102,7 +105,7 @@ Several commands require `sudo` privileges. Command handlers opt in with `sudo=T
 - If `BOTTY_SUDO_PASSWORD` is set, commands run via `sudo -S` and the password is passed through stdin.
 - If `BOTTY_SUDO_PASSWORD` is not set, commands run via `sudo -n` (non-interactive), which requires passwordless sudo.
 
-For production, configure narrowly scoped passwordless sudo for the bot service user.
+For production, configure narrowly scoped passwordless sudo for the bot service user. `install.sh` now generates `/etc/sudoers.d/botty` automatically from `BOTTY_SERVICE_ALLOWLIST`.
 
 ### Privilege Matrix
 
