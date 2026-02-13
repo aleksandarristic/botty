@@ -10,7 +10,6 @@
 
 set -euo pipefail
 
-GIT_REPO_URL="https://github.com/aleksandarristic/botty"
 DEFAULT_SERVICE_USER="botty"
 SERVICE_NAME="botty"
 SUDOERS_PATH="/etc/sudoers.d/botty"
@@ -47,12 +46,44 @@ require_non_root() {
 }
 
 require_dependencies() {
-  local deps=(git python3 pip sudo)
+  local deps=(git pip sudo rsync)
   local missing=()
   for dep in "${deps[@]}"; do
     command -v "$dep" >/dev/null 2>&1 || missing+=("$dep")
   done
   [[ ${#missing[@]} -eq 0 ]] || die "Missing dependencies: ${missing[*]}"
+}
+
+resolve_python_bin() {
+  if [[ -n "${PYTHON_BIN:-}" ]]; then
+    [[ -x "$PYTHON_BIN" ]] || die "--python-bin is not executable: $PYTHON_BIN"
+    msg "${GREEN}Using explicit python: $PYTHON_BIN${NOFORMAT}"
+    return
+  fi
+
+  if [[ -x "/usr/bin/python3" ]]; then
+    PYTHON_BIN="/usr/bin/python3"
+    msg "${GREEN}Using system python: $PYTHON_BIN${NOFORMAT}"
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+    msg "${GREEN}Using python3 from PATH: $PYTHON_BIN${NOFORMAT}"
+    return
+  fi
+
+  if command -v mise >/dev/null 2>&1; then
+    local mise_python
+    mise_python="$(mise which python 2>/dev/null || true)"
+    if [[ -n "$mise_python" && -x "$mise_python" ]]; then
+      PYTHON_BIN="$mise_python"
+      msg "${YELLOW}Using mise python fallback: $PYTHON_BIN${NOFORMAT}"
+      return
+    fi
+  fi
+
+  die "No usable python found. Install python3 or pass --python-bin=<path>."
 }
 
 ensure_sudo_access() {
@@ -68,11 +99,6 @@ check_noexec_mount() {
   if [[ ",$options," == *",noexec,"* ]]; then
     die "$target is on a noexec mount. Choose a different install dir."
   fi
-}
-
-is_empty_dir() {
-  local dir="$1"
-  [[ -d "$dir" ]] && [[ -z "$(ls -A "$dir" 2>/dev/null)" ]]
 }
 
 ensure_install_dir_access() {
@@ -334,33 +360,27 @@ ensure_parent_traverse() {
   done
 }
 
-clone_or_update_repo() {
-  if [[ "$IS_LOCAL_INSTALL" == "true" ]]; then
-    if [[ "$UPDATE" == "true" ]]; then
-      msg "\n${BOLD}Pulling latest changes in local repo...${NOFORMAT}"
-      git pull
-    else
-      msg "\n${BOLD}Using local repo as-is (use --update to pull).${NOFORMAT}"
-    fi
+sync_source_to_install_dir() {
+  local source_dir="$1"
+  local install_dir="$2"
+
+  [[ -f "$source_dir/pyproject.toml" ]] || die "Source dir '$source_dir' is missing pyproject.toml"
+  mkdir -p "$install_dir"
+
+  if [[ "$source_dir" == "$install_dir" ]]; then
+    msg "${GREEN}Install dir is source dir; skipping sync.${NOFORMAT}"
     return
   fi
 
-  msg "\n${BOLD}Preparing repository in $INSTALL_DIR...${NOFORMAT}"
-  if [[ -d "$INSTALL_DIR/.git" ]]; then
-    if [[ "$UPDATE" == "true" ]]; then
-      msg "${YELLOW}Existing git checkout found; pulling latest changes...${NOFORMAT}"
-      git -C "$INSTALL_DIR" pull
-    else
-      msg "${YELLOW}Existing git checkout found; skipping pull (use --update to pull).${NOFORMAT}"
-    fi
-  elif is_empty_dir "$INSTALL_DIR"; then
-    msg "${GREEN}Empty directory detected; cloning repository...${NOFORMAT}"
-    git clone "$GIT_REPO_URL" "$INSTALL_DIR"
-  elif [[ -f "$INSTALL_DIR/pyproject.toml" ]]; then
-    msg "${YELLOW}Using existing Python project in $INSTALL_DIR.${NOFORMAT}"
-  else
-    die "$INSTALL_DIR exists but is not empty and not a botty project."
-  fi
+  msg "\n${BOLD}Syncing source from $source_dir -> $install_dir...${NOFORMAT}"
+  rsync -a --delete \
+    --exclude ".git/" \
+    --exclude ".venv/" \
+    --exclude "__pycache__/" \
+    --exclude ".pytest_cache/" \
+    --exclude ".ruff_cache/" \
+    --exclude "tmp/" \
+    "$source_dir/" "$install_dir/"
 }
 
 prepare_runtime_tree() {
@@ -377,7 +397,8 @@ prepare_runtime_tree() {
 
 build_python_env_as_service_user() {
   local user="$1"
-  local dir="$2"
+  local group="$2"
+  local dir="$3"
 
   if [[ -e "$dir/.venv" ]]; then
     msg "${YELLOW}Removing existing virtual environment at $dir/.venv...${NOFORMAT}"
@@ -385,7 +406,10 @@ build_python_env_as_service_user() {
   fi
 
   msg "\n${BOLD}Creating Python virtual environment at $dir/.venv...${NOFORMAT}"
-  sudo -u "$user" python3 -m venv "$dir/.venv"
+  # Use resolved python interpreter and copy binaries into the venv so runtime
+  # does not depend on access to the source interpreter path.
+  sudo "$PYTHON_BIN" -m venv --copies "$dir/.venv"
+  sudo chown -R "$user:$group" "$dir/.venv"
 
   msg "${BOLD}Installing Python packages as $user...${NOFORMAT}"
   sudo -u "$user" "$dir/.venv/bin/pip" install --upgrade pip
@@ -521,6 +545,8 @@ main() {
   UPDATE=false
   INSTALL_DIR_OVERRIDE=""
   SERVICE_USER="$DEFAULT_SERVICE_USER"
+  PYTHON_BIN="${PYTHON_BIN:-}"
+  SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   for arg in "$@"; do
     case "$arg" in
@@ -529,39 +555,43 @@ main() {
       --update) UPDATE=true ;;
       --service-user=*) SERVICE_USER="${arg#*=}" ;;
       --install-dir=*) INSTALL_DIR_OVERRIDE="${arg#*=}" ;;
+      --python-bin=*) PYTHON_BIN="${arg#*=}" ;;
       *) die "Unknown argument: $arg" ;;
     esac
   done
 
   ensure_sudo_access
+  resolve_python_bin
 
   if [[ "$UNINSTALL" == "true" ]]; then
     uninstall_service
     exit 0
   fi
 
+  if [[ "$UPDATE" == "true" ]]; then
+    msg "${YELLOW}Note: --update no longer pulls from git in install dir.${NOFORMAT}"
+    msg "${YELLOW}Run 'git pull' in your source repo before running install.sh.${NOFORMAT}"
+  fi
+
   if [[ -n "$INSTALL_DIR_OVERRIDE" ]]; then
     INSTALL_DIR="$INSTALL_DIR_OVERRIDE"
-    if [[ -d ".git" && "$INSTALL_DIR" == "$(pwd)" ]]; then
-      IS_LOCAL_INSTALL=true
-      msg "${GREEN}Using local repo install dir: $INSTALL_DIR${NOFORMAT}"
-    else
-      IS_LOCAL_INSTALL=false
-      msg "${GREEN}Using explicit install dir: $INSTALL_DIR${NOFORMAT}"
-    fi
-  elif [[ -d ".git" ]]; then
-    INSTALL_DIR="$(pwd)"
-    IS_LOCAL_INSTALL=true
-    msg "${GREEN}Git repository detected. Installing from current directory.${NOFORMAT}"
+    msg "${GREEN}Using explicit install dir: $INSTALL_DIR${NOFORMAT}"
+  elif [[ -d "$SOURCE_DIR/.git" ]]; then
+    INSTALL_DIR="$SOURCE_DIR"
+    msg "${GREEN}Installing in-place from source dir: $INSTALL_DIR${NOFORMAT}"
   else
     read -rp "Enter install path (default: /opt/botty): " INSTALL_DIR
     INSTALL_DIR="${INSTALL_DIR:-/opt/botty}"
-    IS_LOCAL_INSTALL=false
   fi
 
-  if [[ "$IS_LOCAL_INSTALL" != "true" ]]; then
+  if [[ "$INSTALL_DIR" != "$SOURCE_DIR" ]]; then
     ensure_install_dir_access "$INSTALL_DIR"
   fi
+
+  if [[ "$INSTALL_DIR" == "$SOURCE_DIR" ]] && [[ "$SERVICE_USER" != "$(id -un)" ]]; then
+    die "In-place install with --service-user=$SERVICE_USER would change source repo ownership. Use --install-dir=/opt/botty."
+  fi
+
   check_noexec_mount "$INSTALL_DIR"
 
   local env_file="$INSTALL_DIR/botty.env"
@@ -586,7 +616,7 @@ main() {
   prompt_if_empty MEDIA_PATH "Enter media storage path (default: /mnt/media): " "/mnt/media"
 
   collect_service_allowlist
-  clone_or_update_repo
+  sync_source_to_install_dir "$SOURCE_DIR" "$INSTALL_DIR"
   [[ -f "$INSTALL_DIR/pyproject.toml" ]] || die "$INSTALL_DIR is missing pyproject.toml"
 
   ensure_service_user "$SERVICE_USER"
@@ -594,7 +624,7 @@ main() {
   service_group="$(id -gn "$SERVICE_USER")"
 
   prepare_runtime_tree "$SERVICE_USER" "$service_group" "$INSTALL_DIR"
-  build_python_env_as_service_user "$SERVICE_USER" "$INSTALL_DIR"
+  build_python_env_as_service_user "$SERVICE_USER" "$service_group" "$INSTALL_DIR"
   collect_enabled_commands_interactive
   setup_systemd_service
 

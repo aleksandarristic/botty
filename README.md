@@ -6,13 +6,18 @@ Botty is a Python-based Telegram bot that keeps an eye on a personal server by w
 
 ### Automated service deployment
 
-The `install.sh` script builds a virtual environment, installs the package, and wires up a `systemd` service. It can run either from a local clone or fetched directly over `curl`:
+The `install.sh` script builds a virtual environment, installs the package, and wires up a `systemd` service.
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/aleksandarristic/botty/main/install.sh | bash
 ```
 
-When run from within the repository, `./install.sh` detects the local tree, prompts for any missing credentials or paths, and (when `--update` is passed) pulls the latest commits before reinstalling dependencies. Behind the scenes it:
+Recommended update workflow:
+
+1. Run `git pull` in your normal-user source repo (for example under your home directory).
+2. Run `./install.sh --install-dir=/opt/botty --service-user=botty` from that source repo.
+
+During install, the script syncs source files into `<install_dir>` (it does not run `git pull` in `<install_dir>`). Behind the scenes it:
 
 1. Prompts for or sources `TELEGRAM_BOT_TOKEN` and one or more comma-separated `AUTHORIZED_USER_ID`s.
 2. Prompts for optional service-specific values (`GOHOME_API_URL`, `EMBY_DATA_PATH`, `MEDIA_PATH`) when not already set.
@@ -25,13 +30,14 @@ When run from within the repository, `./install.sh` detects the local tree, prom
 
 Additional flags:
 
-- `--update`: reruns `git pull` prior to reinstalling (skipped by default in local mode).
+- `--update`: accepted for backward compatibility; prints a note to run `git pull` in source repo first.
 - `--reinstall`: re-prompts for every secret and path, overwriting `botty.env`.
 - `--uninstall`: stops/disables the service and removes the unit file (leaving the install directory intact).
 - `--service-user=<name>`: optional override for the service account (default `botty`).
 - `--install-dir=<path>`: optional install target override (for example `--install-dir=/opt/botty`), even when running installer from a local clone.
+- `--python-bin=<path>`: optional explicit Python interpreter for venv creation (example: `--python-bin=/usr/bin/python3`).
 
-When installing from an existing local clone, the installer updates ownership of the install directory to the selected service user so systemd can run it.
+When syncing from a local source repo to a separate install directory, the installer updates ownership/permissions in the install directory for the selected service user so systemd can run it.
 Installer must be run as a normal user (not root); it requests `sudo` internally for privileged steps.
 
 ### Manual development setup
