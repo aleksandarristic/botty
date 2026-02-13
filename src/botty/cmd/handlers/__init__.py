@@ -1,8 +1,9 @@
+from .adguard import AdguardStatusCommand
 from .docker import DockerStatusCommand
-from .media import AdguardStatusCommand, EmbyStatusCommand
+from .example import ExampleCommand
+from .media import EmbyStatusCommand
 from .network import NetworkTestsCommand
 from .status import StartCommand, StatusCommand
-from .example import ExampleCommand
 
 # List of command classes that can be optionally enabled via configuration.
 # StartCommand is excluded here as it is always enabled and handled specially.
@@ -16,8 +17,14 @@ ALL_COMMAND_CLASSES = [
 ]
 
 # Define the public API for this subpackage.
-# We include StartCommand and the registration list, plus all individual classes.
+# Keep this static so type checkers can resolve exports.
 __all__ = [
+    "AdguardStatusCommand",
+    "DockerStatusCommand",
+    "ExampleCommand",
+    "EmbyStatusCommand",
+    "NetworkTestsCommand",
     "StartCommand",
+    "StatusCommand",
     "ALL_COMMAND_CLASSES",
-] + [cls.__name__ for cls in ALL_COMMAND_CLASSES]
+]

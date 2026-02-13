@@ -7,7 +7,7 @@ from botty.cmd.handlers import NetworkTestsCommand
 
 
 @pytest.mark.asyncio
-@patch("botty.services.http.httpx.AsyncClient")
+@patch("botty.cmd.handlers.network.http.httpx.AsyncClient")
 async def test_network_tests_integration(MockAsyncClient, monkeypatch):
     config = BottyConfig(
         telegram_bot_token="test_token",

@@ -4,9 +4,9 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from botty.config import BottyConfig
-from botty.services.system_checks import get_status_checks
 from botty.utils import escape_markdown_code
-from .base import Command
+from botty.cmd.handlers.base import Command
+from .checks import get_status_checks
 
 
 class StartCommand(Command):
@@ -20,7 +20,9 @@ class StartCommand(Command):
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Sends a message when the command /start is issued."""
+        message = self._require_message(update)
         user = update.effective_user
+        greeting = user.mention_html() if user is not None else "there"
         commands_list = "\n".join(
             [
                 f"/{html.escape(str(cmd.name), quote=True)} - "
@@ -28,8 +30,8 @@ class StartCommand(Command):
                 for cmd in self.commands
             ]
         )
-        await update.message.reply_html(
-            rf"Hi {user.mention_html()}! Here are the available commands:"
+        await message.reply_html(
+            rf"Hi {greeting}! Here are the available commands:"
             f"\n{commands_list}"
         )
 
@@ -40,6 +42,7 @@ class StatusCommand(Command):
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Provides a general server health check."""
+        reply_message = self._require_message(update)
         uptime, disk_usage, memory_usage = await get_status_checks()
 
         message = "*Server Status*\n\n"
@@ -49,7 +52,7 @@ class StatusCommand(Command):
             f"*Disk Usage \\(/\\):*\n```\n{escape_markdown_code(disk_usage)}\n```"
         )
 
-        await update.message.reply_text(message, parse_mode="MarkdownV2")
+        await reply_message.reply_text(message, parse_mode="MarkdownV2")
 
 
 __all__ = ["StartCommand", "StatusCommand"]

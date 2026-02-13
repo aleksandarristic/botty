@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from botty.utils import run_command, escape_markdown_code
-from .base import Command
+from botty.cmd.handlers.base import Command
 
 
 class ExampleCommand(Command):
@@ -30,6 +30,7 @@ class ExampleCommand(Command):
         """
         Executes the command logic.
         """
+        reply_message = self._require_message(update)
         # --- EXAMPLE 1: Using run_command for shell execution ---
         # run_command takes a list of strings and returns the combined stdout/stderr.
         # It has a default timeout of 10 seconds.
@@ -53,13 +54,13 @@ class ExampleCommand(Command):
             f"*Uptime:* `{uptime_escaped}`\n"
             f"*Echo args:* `{escape_markdown_code(echo_arg)}`\n\n"
             "*Next Steps:*\n"
-            "1. Edit `src/botty/cmd/handlers/example.py`\n"
+            "1. Edit `src/botty/cmd/handlers/example/command.py`\n"
             "2. Use `await run_command(['ls', '-la'])` to check files\n"
             "3. Use `self.config.gohome_api_url` for API calls\n"
             "4. Try `/example hello world` to see context.args"
         )
 
-        await update.message.reply_text(message, parse_mode="MarkdownV2")
+        await reply_message.reply_text(message, parse_mode="MarkdownV2")
 
 
 __all__ = ["ExampleCommand"]

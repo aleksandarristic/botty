@@ -101,7 +101,7 @@ async def test_unauthorized_user(mock_update, test_config):
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.status.get_status_checks")
+@patch("botty.cmd.handlers.status.command.get_status_checks")
 async def test_status_command(mock_run_command, mock_update, test_config):
     """Test the /status command handler."""
     mock_run_command.return_value = ("up 2 days", "disk usage /", "memory usage")
@@ -119,7 +119,7 @@ async def test_status_command(mock_run_command, mock_update, test_config):
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.media.get_emby_checks")
+@patch("botty.cmd.handlers.media.command.get_emby_checks")
 async def test_emby_status_command(mock_run_command, mock_update, test_config):
     """Test the /emby_status command handler."""
     test_config.emby_data_path = "/fake/embydata"
@@ -144,7 +144,7 @@ async def test_emby_status_command(mock_run_command, mock_update, test_config):
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.media.get_adguard_checks")
+@patch("botty.cmd.handlers.adguard.command.get_adguard_checks")
 async def test_adguard_status_command(mock_run_command, mock_update, test_config):
     """Test the /adguard_status command handler."""
     mock_run_command.return_value = "adguard is running"
@@ -159,7 +159,7 @@ async def test_adguard_status_command(mock_run_command, mock_update, test_config
 
 
 @pytest.mark.asyncio
-@patch("botty.services.http.httpx.AsyncClient")
+@patch("botty.cmd.handlers.network.http.httpx.AsyncClient")
 async def test_network_tests_command_success(MockAsyncClient, mock_update, test_config):
     """Test the /network_tests command on a successful API call."""
     test_config.gohome_api_url = "http://example.local/status"
@@ -215,7 +215,7 @@ async def test_network_tests_command_success(MockAsyncClient, mock_update, test_
 
 
 @pytest.mark.asyncio
-@patch("botty.services.http.httpx.AsyncClient")
+@patch("botty.cmd.handlers.network.http.httpx.AsyncClient")
 async def test_network_tests_command_failure(MockAsyncClient, mock_update, test_config):
     """Test the /network_tests command on a failed API call."""
     cmd = NetworkTestsCommand(test_config)
@@ -233,7 +233,7 @@ async def test_network_tests_command_failure(MockAsyncClient, mock_update, test_
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.example.run_command", new_callable=AsyncMock)
+@patch("botty.cmd.handlers.example.command.run_command", new_callable=AsyncMock)
 async def test_example_command_with_args(mock_run_command, mock_update, test_config):
     mock_run_command.return_value = "up 10 minutes"
     context = MagicMock()
@@ -249,8 +249,8 @@ async def test_example_command_with_args(mock_run_command, mock_update, test_con
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.docker.os.path.isfile")
-@patch("botty.cmd.handlers.docker.run_command", new_callable=AsyncMock)
+@patch("botty.cmd.handlers.docker.command.os.path.isfile")
+@patch("botty.cmd.handlers.docker.command.run_command", new_callable=AsyncMock)
 async def test_docker_status_with_directory(
     mock_run_command, mock_isfile, mock_update, test_config
 ):
@@ -277,7 +277,7 @@ async def test_docker_status_with_directory(
 
 
 @pytest.mark.asyncio
-@patch("botty.cmd.handlers.docker.run_command", new_callable=AsyncMock)
+@patch("botty.cmd.handlers.docker.command.run_command", new_callable=AsyncMock)
 async def test_docker_status_without_directory(mock_run_command, mock_update, test_config):
     mock_run_command.return_value = "docker info ok"
     context = MagicMock()

@@ -2,6 +2,8 @@ from dataclasses import dataclass
 import os
 from typing import List
 
+from telegram import Update
+
 
 @dataclass
 class BottyConfig:
@@ -38,5 +40,6 @@ class BottyConfig:
             media_path=os.getenv("MEDIA_PATH", "/mnt/media"),
         )
 
-    def is_authorized(self, update) -> bool:
-        return str(update.effective_user.id) in self.authorized_user_ids
+    def is_authorized(self, update: Update) -> bool:
+        user = update.effective_user
+        return user is not None and str(user.id) in self.authorized_user_ids

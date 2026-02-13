@@ -72,27 +72,81 @@ Every textual reply is sanitized with `escape_markdown` / `escape_markdown_code`
 
 ## Customization: Adding New Commands
 
-Botty is designed to be easily extended. To add a new command:
+Botty uses a package-per-command style under `src/botty/cmd/handlers/`. Follow this workflow:
 
-1.  **Create a handler:** Create a new file in `src/botty/cmd/handlers/` (e.g., `my_command.py`).
-2.  **Define the class:** Inherit from the `Command` base class.
-    ```python
-    from .base import Command
-    from botty.utils import run_command, escape_markdown_code
+1. Create a handler package.
+   Example for a command named `hello`:
+   ```bash
+   mkdir -p src/botty/cmd/handlers/hello
+   ```
 
-    class MyCustomCommand(Command):
-        name = "hello"
-        description = "Returns a friendly greeting and system info"
+2. Add `command.py` with a command class.
+   ```python
+   # src/botty/cmd/handlers/hello/command.py
+   from telegram import Update
+   from telegram.ext import ContextTypes
 
-        async def run(self, update, context):
-            output = await run_command(["uname", "-a"])
-            msg = f"Hello! System info: \n```\n{escape_markdown_code(output)}\n```"
-            await update.message.reply_text(msg, parse_mode="MarkdownV2")
-    ```
-3.  **Register the command:** Add your class to `ALL_COMMAND_CLASSES` in `src/botty/cmd/handlers/__init__.py`.
-4.  **Configure (Optional):** If you are using `ENABLED_COMMANDS` in your `.env`, add your new command name to the list.
+   from botty.cmd.handlers.base import Command
+   from botty.utils import escape_markdown_code, run_command
 
-Refer to `src/botty/cmd/handlers/example.py` for a detailed template with more complex examples.
+
+   class HelloCommand(Command):
+       name = "hello"
+       description = "Example custom command"
+
+       async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+           message = self._require_message(update)
+           args = " ".join(context.args).strip() if context.args else "(no args)"
+           uptime = await run_command(["uptime", "-p"])
+
+           reply = (
+               "*Hello Command*\n\n"
+               f"*Args:* `{escape_markdown_code(args)}`\n"
+               f"*Uptime:* `{escape_markdown_code(uptime.strip())}`"
+           )
+           await message.reply_text(reply, parse_mode="MarkdownV2")
+   ```
+
+3. Add package exports.
+   ```python
+   # src/botty/cmd/handlers/hello/__init__.py
+   from .command import HelloCommand as HelloCommand
+
+   __all__ = ["HelloCommand"]
+   ```
+
+4. Register the command class.
+   Edit `src/botty/cmd/handlers/__init__.py`:
+   - import it (`from .hello import HelloCommand`)
+   - add it to `ALL_COMMAND_CLASSES`
+   - add it to `__all__`
+
+5. Optional: add handler-local support modules.
+   If logic is command-specific (formatters, HTTP clients, checks, caching), keep it in the same package:
+   - `src/botty/cmd/handlers/hello/checks.py`
+   - `src/botty/cmd/handlers/hello/formatter.py`
+   Shared utilities stay in `src/botty/utils.py` (for example markdown escaping and shell execution helpers).
+
+6. Configure command visibility.
+   - If `ENABLED_COMMANDS` is unset: all commands in `ALL_COMMAND_CLASSES` are enabled.
+   - If set: only listed command names are enabled.
+   - `/start` is always enabled and auto-builds its menu from currently enabled commands.
+
+7. Add tests.
+   - Add/extend tests in `tests/test_handlers.py`.
+   - Patch the correct module path for your handler package (for example `botty.cmd.handlers.hello.command.run_command`).
+   - If the command has parser/formatter helpers, add focused unit tests in a dedicated test file.
+
+8. Validate locally.
+   ```bash
+   .venv/bin/python -m pytest -q
+   .venv/bin/python -m ruff check .
+   ```
+
+For a real reference implementation, see:
+- `src/botty/cmd/handlers/example/command.py`
+- `src/botty/cmd/handlers/network/`
+- `src/botty/cmd/handlers/docker/command.py`
 
 ## Testing
 
@@ -106,8 +160,8 @@ pytest
 
 - `src/botty/main.py`: entry point invoked by the `botty` console script defined in `pyproject.toml`.
 - `src/botty/utils.py`: command helpers (shell execution + Markdown escaping).
-- `src/botty/services/`: GoHome formatting, HTTP client setup, and system check adapters.
-- `src/botty/cmd/handlers/`: command implementations and the `command_registry` in `src/botty/cmd/__init__.py`.
+- `src/botty/cmd/__init__.py`: command registry assembly and `ENABLED_COMMANDS` filtering.
+- `src/botty/cmd/handlers/`: command packages (`<command>/command.py`, optional local helper modules, package exports).
 - `tests/`: handler and utility tests.
 - `install.sh`: produces the `.venv` installation, configuration file, and systemd unit.
 - `.env.example`: template for local development secrets.

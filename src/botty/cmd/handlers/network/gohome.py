@@ -16,14 +16,13 @@ def format_network_tests(data: dict) -> str:
     if not isinstance(data, dict):
         logger.warning("gohome.invalid_payload", extra={"payload_type": type(data)})
         raise GoHomeParseError("GoHome payload must be a dict")
-    # Safely extract data with checks
+
     speed_data = data.get("speedtest", {})
     ping_data = data.get("ping", {})
     device_data = data.get("device", {})
 
     message = "*Network Test Results*\n\n"
 
-    # Speedtest Section
     if speed_data and speed_data.get("Available"):
         dl = speed_data.get("DownloadMbps")
         ul = speed_data.get("UploadMbps")
@@ -40,12 +39,10 @@ def format_network_tests(data: dict) -> str:
         section += f"Ping:     {ping_str} ms\n"
         section += f"Updated:  {last_updated}\n"
         section += f"Next Run: {next_run}"
-
         message += f"*Speedtest:*\n```\n{escape_markdown_code(section)}\n```\n"
     else:
         message += "*Speedtest:*\n```\nNo data available\n```\n"
 
-    # Ping Section
     if ping_data and ping_data.get("Available"):
         targets = ping_data.get("Targets", [])
         if targets:
@@ -57,7 +54,6 @@ def format_network_tests(data: dict) -> str:
 
                 avg_str = f"{avg:.2f}" if isinstance(avg, (int, float)) else "N/A"
                 loss_str = f"{loss}" if loss is not None else "N/A"
-
                 section += f"{name[:15]:<15}: {avg_str:>6} ms (Loss: {loss_str:>3}%)\n"
             message += f"*Ping:*\n```\n{escape_markdown_code(section.strip())}\n```\n"
         else:
@@ -65,7 +61,6 @@ def format_network_tests(data: dict) -> str:
     else:
         message += "*Ping:*\\n```\\nNo data available\\n```\\n"
 
-    # Device Section
     if device_data and device_data.get("Available"):
         temp = device_data.get("TemperatureC")
         uptime = device_data.get("UptimeText")
@@ -93,7 +88,6 @@ def format_network_tests(data: dict) -> str:
         section += f"Memory:   {mem_str}\n"
         section += f"Loads:    {load_str}\n"
         section += f"Uptime:   {uptime_str}"
-
         message += f"*Device Metrics:*\n```\n{escape_markdown_code(section)}\n```"
     else:
         message += "*Device Metrics:*\n```\nNo data available\n```"

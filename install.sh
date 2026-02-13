@@ -104,10 +104,15 @@ setup_systemd_service() {
   # Set defaults for Emby paths if not already provided via env
   EMBY_DATA_PATH=${EMBY_DATA_PATH:-"/mnt/embydata"}
   MEDIA_PATH=${MEDIA_PATH:-"/mnt/media"}
+  local enabled_commands_line=""
+  if [[ -n "$ENABLED_COMMANDS" ]]; then
+    enabled_commands_line="ENABLED_COMMANDS=$ENABLED_COMMANDS"
+  fi
   
   cat > "$ENV_FILE_PATH" << EOL
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 AUTHORIZED_USER_ID=$AUTHORIZED_USER_ID
+${enabled_commands_line}
 GOHOME_API_URL="$GOHOME_API_URL"
 EMBY_DATA_PATH="$EMBY_DATA_PATH"
 MEDIA_PATH="$MEDIA_PATH"
@@ -251,6 +256,10 @@ main() {
   if [[ -z "$MEDIA_PATH" ]] || [[ "$REINSTALL" == "true" ]]; then
     read -p "Enter media storage path (default: /mnt/media): " MEDIA_PATH
     MEDIA_PATH=${MEDIA_PATH:-"/mnt/media"}
+  fi
+
+  if [[ "$REINSTALL" == "true" ]] || [[ -z "${ENABLED_COMMANDS+x}" ]]; then
+    read -p "Enter ENABLED_COMMANDS (comma-separated, optional; leave empty to enable all): " ENABLED_COMMANDS
   fi
 
   # Clone or pull the repository

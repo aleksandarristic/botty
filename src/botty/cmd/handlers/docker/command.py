@@ -4,14 +4,14 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from botty.utils import escape_markdown, escape_markdown_code, run_command
-from .base import Command
-
+from botty.cmd.handlers.base import Command
 
 class DockerStatusCommand(Command):
     name = "docker_status"
     description = "Docker daemon status and optional compose service state"
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        reply_message = self._require_message(update)
         docker_info = await run_command(["docker", "info"])
 
         compose_output = ""
@@ -33,7 +33,7 @@ class DockerStatusCommand(Command):
                 "Example: /docker_status /opt/stacks/home\n```"
             )
 
-        await update.message.reply_text(message, parse_mode="MarkdownV2")
+        await reply_message.reply_text(message, parse_mode="MarkdownV2")
 
     async def _get_compose_status(self, target: str) -> str:
         compose_file = target
