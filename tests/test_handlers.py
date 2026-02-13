@@ -86,6 +86,21 @@ def test_registry_fills_missing_description(test_config, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handler_returns_generic_error_on_exception(mock_update, test_config):
+    class FailingCommand(Command):
+        name = "failing"
+        description = "failing command"
+
+        async def run(self, update, context):
+            raise RuntimeError("boom")
+
+    cmd = FailingCommand(test_config)
+    await cmd.handle(mock_update, None)
+
+    mock_update.message.reply_text.assert_called_once_with("Error executing command.")
+
+
+@pytest.mark.asyncio
 async def test_unauthorized_user(mock_update, test_config):
     """Test that an unauthorized user is rejected."""
     test_config.authorized_user_ids = ["a_different_id"]

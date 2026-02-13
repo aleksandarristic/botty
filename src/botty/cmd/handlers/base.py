@@ -1,8 +1,11 @@
 from abc import ABC, abstractmethod
+import logging
 
 from telegram import Message, Update
 
 from botty.config import BottyConfig
+
+logger = logging.getLogger(__name__)
 
 
 class Command(ABC):
@@ -34,7 +37,14 @@ class Command(ABC):
             return
         if message is None:
             return
-        await self.run(update, context)
+        try:
+            await self.run(update, context)
+        except Exception:
+            logger.exception(
+                "command.run_failed",
+                extra={"command": getattr(self, "name", self.__class__.__name__)},
+            )
+            await message.reply_text("Error executing command.")
 
     @abstractmethod
     async def run(self, update: Update, context) -> None:

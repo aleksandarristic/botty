@@ -54,10 +54,10 @@ class ExampleCommand(Command):
             f"*Uptime:* `{uptime_escaped}`\n"
             f"*Echo args:* `{escape_markdown_code(echo_arg)}`\n\n"
             "*Next Steps:*\n"
-            "1. Edit `src/botty/cmd/handlers/example/command.py`\n"
-            "2. Use `await run_command(['ls', '-la'])` to check files\n"
-            "3. Use `self.config.gohome_api_url` for API calls\n"
-            "4. Try `/example hello world` to see context.args"
+            "1\\. Edit `src/botty/cmd/handlers/example/command.py`\n"
+            "2\\. Use `await run_command(['ls', '-la'])` to check files\n"
+            "3\\. Use `self.config.gohome_api_url` for API calls\n"
+            "4\\. Try `/example hello world` to see context.args"
         )
 
         await reply_message.reply_text(message, parse_mode="MarkdownV2")
