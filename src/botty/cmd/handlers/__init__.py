@@ -4,6 +4,7 @@ from .example import ExampleCommand
 from .media import EmbyStatusCommand
 from .monitoring import LogsCommand, TempCommand, TopCommand
 from .network import NetworkTestsCommand
+from .network_tools import PingCommand, WolCommand
 from .status import StartCommand, StatusCommand
 from .system_control import RebootCommand, ServiceCommand
 
@@ -23,6 +24,8 @@ ALL_COMMAND_CLASSES = [
     LogsCommand,
     TempCommand,
     TopCommand,
+    PingCommand,
+    WolCommand,
 ]
 
 # Define the public API for this subpackage.
@@ -36,11 +39,13 @@ __all__ = [
     "EmbyStatusCommand",
     "LogsCommand",
     "NetworkTestsCommand",
+    "PingCommand",
     "RebootCommand",
     "ServiceCommand",
     "StartCommand",
     "StatusCommand",
     "TempCommand",
     "TopCommand",
+    "WolCommand",
     "ALL_COMMAND_CLASSES",
 ]
