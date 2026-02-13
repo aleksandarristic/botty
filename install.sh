@@ -69,6 +69,64 @@ ensure_install_dir_access() {
   fi
 }
 
+ensure_sudo_access() {
+  msg "\n${BOLD}Requesting sudo access for privileged install steps...${NOFORMAT}"
+  sudo -v
+}
+
+check_noexec_mount() {
+  local target="$1"
+  if ! command -v findmnt &> /dev/null; then
+    return
+  fi
+  local options
+  options="$(findmnt -no OPTIONS "$target" 2>/dev/null || true)"
+  if [[ ",$options," == *",noexec,"* ]]; then
+    msg "${RED}Error: $target is on a noexec mount. Executables cannot run from here.${NOFORMAT}"
+    msg "Use a different install directory (for example /opt/botty on an exec-enabled mount)."
+    exit 1
+  fi
+}
+
+ensure_service_runtime_access() {
+  local service_user="$1"
+  local service_group="$2"
+  local install_dir="$3"
+
+  # Ensure service user can traverse all parent directories.
+  local current="$install_dir"
+  local parents=()
+  while [[ "$current" != "/" ]]; do
+    current="$(dirname "$current")"
+    parents=("$current" "${parents[@]}")
+  done
+
+  for parent in "${parents[@]}"; do
+    if ! sudo -u "$service_user" test -x "$parent" 2>/dev/null; then
+      if command -v setfacl &> /dev/null; then
+        msg "${YELLOW}Granting traverse permission on $parent for $service_user via ACL...${NOFORMAT}"
+        sudo setfacl -m "u:$service_user:x" "$parent" || true
+      fi
+    fi
+  done
+
+  # Directory + file permissions for runtime.
+  sudo find "$install_dir" -type d -exec chmod 750 {} \;
+  if [[ -d "$install_dir/.venv/bin" ]]; then
+    sudo find "$install_dir/.venv/bin" -type f -exec chmod 750 {} \;
+  fi
+
+  # Validate executability as service user before starting systemd unit.
+  if ! sudo -u "$service_user" test -x "$install_dir/.venv/bin/python"; then
+    msg "${RED}Error: service user '$service_user' cannot execute $install_dir/.venv/bin/python${NOFORMAT}"
+    exit 1
+  fi
+  if ! sudo -u "$service_user" test -x "$install_dir/.venv/bin/botty"; then
+    msg "${RED}Error: service user '$service_user' cannot execute $install_dir/.venv/bin/botty${NOFORMAT}"
+    exit 1
+  fi
+}
+
 trim() {
   local s="$1"
   # shellcheck disable=SC2001
@@ -404,7 +462,7 @@ EOL
   # Ensure service user can read and execute the installation tree.
   msg "Adjusting ownership for $INSTALL_DIR to $SERVICE_USER..."
   sudo chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR"
-  sudo find "$INSTALL_DIR" -type d -exec chmod 750 {} \;
+  ensure_service_runtime_access "$SERVICE_USER" "$SERVICE_GROUP" "$INSTALL_DIR"
 
   # Create the service file content
   local service_content
@@ -508,6 +566,7 @@ main() {
   done
 
   if [ "$UNINSTALL" = true ]; then
+    ensure_sudo_access
     uninstall_service
     exit 0
   fi
@@ -538,6 +597,8 @@ main() {
   if [[ "$IS_LOCAL_INSTALL" != "true" ]]; then
     ensure_install_dir_access "$INSTALL_DIR"
   fi
+  check_noexec_mount "$INSTALL_DIR"
+  ensure_sudo_access
   
   # Check for existing configuration
   local ENV_FILE="$INSTALL_DIR/botty.env"

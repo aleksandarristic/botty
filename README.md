@@ -21,6 +21,7 @@ When run from within the repository, `./install.sh` detects the local tree, prom
 5. Creates `<install_dir>/.venv`, installs `botty` in editable mode, and writes a `botty.env` file.
 6. Registers `/etc/systemd/system/botty.service` with the selected service user, reloads the daemon, enables, and restarts the service.
 7. Generates a scoped sudoers policy in `/etc/sudoers.d/botty` based on the selected service allow-list.
+8. Validates runtime execute permissions for the service user and refuses install if the target mount is `noexec`.
 
 Additional flags:
 
@@ -31,6 +32,7 @@ Additional flags:
 - `--install-dir=<path>`: optional install target override (for example `--install-dir=/opt/botty`), even when running installer from a local clone.
 
 When installing from an existing local clone, the installer updates ownership of the install directory to the selected service user so systemd can run it.
+Installer must be run as a normal user (not root); it requests `sudo` internally for privileged steps.
 
 ### Manual development setup
 
