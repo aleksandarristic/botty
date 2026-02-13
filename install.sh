@@ -379,6 +379,11 @@ build_python_env_as_service_user() {
   local user="$1"
   local dir="$2"
 
+  if [[ -e "$dir/.venv" ]]; then
+    msg "${YELLOW}Removing existing virtual environment at $dir/.venv...${NOFORMAT}"
+    sudo rm -rf "$dir/.venv"
+  fi
+
   msg "\n${BOLD}Creating Python virtual environment at $dir/.venv...${NOFORMAT}"
   sudo -u "$user" python3 -m venv "$dir/.venv"
 
