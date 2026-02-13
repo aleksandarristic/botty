@@ -221,7 +221,7 @@ collect_service_allowlist() {
 }
 
 discover_commands() {
-  "$INSTALL_DIR/.venv/bin/python" - "$INSTALL_DIR" << 'PY'
+  sudo -u "$SERVICE_USER" "$INSTALL_DIR/.venv/bin/python" - "$INSTALL_DIR" << 'PY'
 import sys
 from pathlib import Path
 
