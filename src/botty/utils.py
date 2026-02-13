@@ -1,15 +1,12 @@
 import asyncio
-import base64
-import binascii
-import hashlib
-import hmac
 import os
 import re
 import shutil
-import struct
 import subprocess
 import time
 from typing import List
+
+import pyotp
 
 
 async def run_command(
@@ -114,22 +111,6 @@ def escape_markdown_code(text: str) -> str:
     return text.replace("\\", "\\\\").replace("`", "\\`")
 
 
-def _normalize_totp_secret(secret: str) -> str:
-    return re.sub(r"\s+", "", secret).upper()
-
-
-def _totp_code(secret: str, for_time: float, period: int = 30, digits: int = 6) -> str:
-    normalized = _normalize_totp_secret(secret)
-    padding = (-len(normalized)) % 8
-    key = base64.b32decode(normalized + ("=" * padding), casefold=True)
-    counter = int(for_time // period)
-    msg = struct.pack(">Q", counter)
-    digest = hmac.new(key, msg, hashlib.sha1).digest()
-    offset = digest[-1] & 0x0F
-    code_int = struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF
-    return str(code_int % (10**digits)).zfill(digits)
-
-
 def verify_totp(
     code: str,
     secret: str,
@@ -137,7 +118,7 @@ def verify_totp(
     at_time: float | None = None,
     window_steps: int = 1,
 ) -> bool:
-    """Validates a 6-digit RFC6238 TOTP code within a small time window."""
+    """Validates a TOTP code within a small time window."""
     if not re.fullmatch(r"\d{6}", code):
         return False
     if not secret:
@@ -145,13 +126,11 @@ def verify_totp(
 
     now = time.time() if at_time is None else at_time
     try:
-        for step in range(-window_steps, window_steps + 1):
-            candidate = _totp_code(secret, now + step * 30)
-            if hmac.compare_digest(candidate, code):
-                return True
-    except (ValueError, TypeError, binascii.Error):
+        return bool(
+            pyotp.TOTP(secret).verify(code, for_time=now, valid_window=window_steps)
+        )
+    except Exception:
         return False
-    return False
 
 
 __all__ = [

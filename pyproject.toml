@@ -12,6 +12,7 @@ dependencies = [
     "python-telegram-bot",
     "httpx",
     "python-dotenv",
+    "pyotp",
 ]
 
 [project.optional-dependencies]
