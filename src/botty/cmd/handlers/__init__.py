@@ -2,6 +2,7 @@ from .adguard import AdguardStatusCommand
 from .docker import DockerStatusCommand
 from .example import ExampleCommand
 from .media import EmbyStatusCommand
+from .monitoring import LogsCommand, TempCommand, TopCommand
 from .network import NetworkTestsCommand
 from .status import StartCommand, StatusCommand
 from .system_control import RebootCommand, ServiceCommand
@@ -17,6 +18,9 @@ ALL_COMMAND_CLASSES = [
     DockerStatusCommand,
     RebootCommand,
     ServiceCommand,
+    LogsCommand,
+    TempCommand,
+    TopCommand,
 ]
 
 # Define the public API for this subpackage.
@@ -26,10 +30,13 @@ __all__ = [
     "DockerStatusCommand",
     "ExampleCommand",
     "EmbyStatusCommand",
+    "LogsCommand",
     "NetworkTestsCommand",
     "RebootCommand",
     "ServiceCommand",
     "StartCommand",
     "StatusCommand",
+    "TempCommand",
+    "TopCommand",
     "ALL_COMMAND_CLASSES",
 ]
