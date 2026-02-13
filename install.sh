@@ -217,6 +217,7 @@ main() {
   local REINSTALL=false
   local UNINSTALL=false
   local UPDATE=false
+  local INSTALL_DIR_OVERRIDE=""
   SERVICE_USER="$DEFAULT_SERVICE_USER"
   for arg in "$@"; do
     case $arg in
@@ -236,6 +237,10 @@ main() {
         SERVICE_USER="${arg#*=}"
         shift
         ;;
+      --install-dir=*)
+        INSTALL_DIR_OVERRIDE="${arg#*=}"
+        shift
+        ;;
     esac
   done
 
@@ -245,7 +250,17 @@ main() {
   fi
 
   # Determine the installation directory
-  if [ -d ".git" ]; then
+  if [[ -n "$INSTALL_DIR_OVERRIDE" ]]; then
+    INSTALL_DIR="$INSTALL_DIR_OVERRIDE"
+    if [[ -d ".git" ]] && [[ "$INSTALL_DIR" == "$(pwd)" ]]; then
+      msg "${GREEN}Using explicit install dir: $INSTALL_DIR (current git repository).${NOFORMAT}"
+      IS_LOCAL_INSTALL=true
+      msg "${YELLOW}Note: service will run as '$SERVICE_USER' and installer will chown this directory to that user.${NOFORMAT}"
+    else
+      msg "${GREEN}Using explicit install dir: $INSTALL_DIR${NOFORMAT}"
+      IS_LOCAL_INSTALL=false
+    fi
+  elif [ -d ".git" ]; then
     msg "${GREEN}Git repository detected. Installing from the current directory.${NOFORMAT}"
     INSTALL_DIR=$(pwd)
     IS_LOCAL_INSTALL=true

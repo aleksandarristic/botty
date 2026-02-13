@@ -26,6 +26,7 @@ Additional flags:
 - `--reinstall`: re-prompts for every secret and path, overwriting `botty.env`.
 - `--uninstall`: stops/disables the service and removes the unit file (leaving the install directory intact).
 - `--service-user=<name>`: optional override for the service account (default `botty`).
+- `--install-dir=<path>`: optional install target override (for example `--install-dir=/opt/botty`), even when running installer from a local clone.
 
 When installing from an existing local clone, the installer updates ownership of the install directory to the selected service user so systemd can run it.
 
