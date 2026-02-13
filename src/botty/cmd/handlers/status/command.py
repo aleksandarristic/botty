@@ -52,7 +52,7 @@ class StatusCommand(Command):
             f"*Disk Usage \\(/\\):*\n```\n{escape_markdown_code(disk_usage)}\n```"
         )
 
-        await reply_message.reply_text(message, parse_mode="MarkdownV2")
+        await self._reply_markdown(reply_message, message)
 
 
 __all__ = ["StartCommand", "StatusCommand"]

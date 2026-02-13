@@ -30,7 +30,7 @@ class NetworkTestsCommand(Command):
                 and self._cache_message is not None
                 and now - self._cache_timestamp < self._cache_ttl_seconds
             ):
-                await reply_message.reply_text(self._cache_message, parse_mode="MarkdownV2")
+                await self._reply_markdown(reply_message, self._cache_message)
                 return
 
             async with create_async_client(self.config) as client:
@@ -41,26 +41,26 @@ class NetworkTestsCommand(Command):
                 message = format_network_tests(data)
                 self._cache_message = message
                 self._cache_timestamp = now
-                await reply_message.reply_text(message, parse_mode="MarkdownV2")
+                await self._reply_markdown(reply_message, message)
 
         except httpx.RequestError as e:
             self._logger.warning(
                 "gohome.request_failed", extra={"url": self.config.gohome_api_url}
             )
-            await reply_message.reply_text(
+            await self._reply_markdown(
+                reply_message,
                 f"Could not connect to the GoHome API: {escape_markdown(str(e))}",
-                parse_mode="MarkdownV2",
             )
         except GoHomeParseError as e:
             self._logger.warning("gohome.parse_failed", exc_info=e)
-            await reply_message.reply_text(
+            await self._reply_markdown(
+                reply_message,
                 f"GoHome parsing error: {escape_markdown(str(e))}",
-                parse_mode="MarkdownV2",
             )
         except Exception as e:
             self._logger.exception("gohome.unexpected_error")
-            await reply_message.reply_text(
-                f"An error occurred: {escape_markdown(str(e))}", parse_mode="MarkdownV2"
+            await self._reply_markdown(
+                reply_message, f"An error occurred: {escape_markdown(str(e))}"
             )
 
 

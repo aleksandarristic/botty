@@ -33,7 +33,7 @@ class DockerStatusCommand(Command):
                 "Example: /docker_status /opt/stacks/home\n```"
             )
 
-        await reply_message.reply_text(message, parse_mode="MarkdownV2")
+        await self._reply_markdown(reply_message, message)
 
     async def _get_compose_status(self, target: str) -> str:
         compose_file = target

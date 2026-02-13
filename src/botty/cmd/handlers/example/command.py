@@ -57,10 +57,10 @@ class ExampleCommand(Command):
             "1\\. Edit `src/botty/cmd/handlers/example/command.py`\n"
             "2\\. Use `await run_command(['ls', '-la'])` to check files\n"
             "3\\. Use `self.config.gohome_api_url` for API calls\n"
-            "4\\. Try `/example hello world` to see context.args"
+            "4\\. Try `/example hello world` to see `context.args`"
         )
 
-        await reply_message.reply_text(message, parse_mode="MarkdownV2")
+        await self._reply_markdown(reply_message, message)
 
 
 __all__ = ["ExampleCommand"]

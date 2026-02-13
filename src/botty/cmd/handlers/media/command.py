@@ -30,7 +30,7 @@ class EmbyStatusCommand(Command):
             f"```\n{escape_markdown_code(media_drive_status)}\n```"
         )
 
-        await reply_message.reply_text(message, parse_mode="MarkdownV2")
+        await self._reply_markdown(reply_message, message)
 
 
 

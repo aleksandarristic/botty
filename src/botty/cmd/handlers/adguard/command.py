@@ -19,6 +19,6 @@ class AdguardStatusCommand(Command):
             f"*AdGuard Home Status*\n\n```\n{escape_markdown_code(service_status)}\n```"
         )
 
-        await reply_message.reply_text(message, parse_mode="MarkdownV2")
+        await self._reply_markdown(reply_message, message)
 
 __all__ = ["AdguardStatusCommand"]
