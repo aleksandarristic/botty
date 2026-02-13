@@ -1,3 +1,3 @@
-from .command import DockerStatusCommand as DockerStatusCommand
+from .command import DockerStatusCommand, DockerListCommand, DockerRestartCommand
 
-__all__ = ["DockerStatusCommand"]
+__all__ = ["DockerStatusCommand", "DockerListCommand", "DockerRestartCommand"]

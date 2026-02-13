@@ -1,5 +1,5 @@
 from .adguard import AdguardStatusCommand
-from .docker import DockerStatusCommand
+from .docker import DockerListCommand, DockerRestartCommand, DockerStatusCommand
 from .example import ExampleCommand
 from .media import EmbyStatusCommand
 from .monitoring import LogsCommand, TempCommand, TopCommand
@@ -16,6 +16,8 @@ ALL_COMMAND_CLASSES = [
     NetworkTestsCommand,
     ExampleCommand,
     DockerStatusCommand,
+    DockerListCommand,
+    DockerRestartCommand,
     RebootCommand,
     ServiceCommand,
     LogsCommand,
@@ -27,6 +29,8 @@ ALL_COMMAND_CLASSES = [
 # Keep this static so type checkers can resolve exports.
 __all__ = [
     "AdguardStatusCommand",
+    "DockerListCommand",
+    "DockerRestartCommand",
     "DockerStatusCommand",
     "ExampleCommand",
     "EmbyStatusCommand",

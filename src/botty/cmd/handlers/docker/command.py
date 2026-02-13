@@ -58,4 +58,62 @@ class DockerStatusCommand(Command):
         return None
 
 
-__all__ = ["DockerStatusCommand"]
+class DockerListCommand(Command):
+    name = "docker_list"
+    description = "List all docker containers"
+
+    async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Usage: /docker_list
+        """
+        reply_message = self._require_message(update)
+        
+        cmd = ["docker", "ps", "-a", "--format", "table {{.Names}}\t{{.Status}}"]
+        output = await run_command(cmd)
+        
+        if not output.strip():
+            output = "No containers found or docker daemon not reachable."
+            
+        await self._reply_markdown(
+            reply_message,
+            f"*Docker Containers*\n```\n{escape_markdown_code(output)}\n```"
+        )
+
+
+class DockerRestartCommand(Command):
+    name = "docker_restart"
+    description = "Restart a docker container"
+
+    async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Usage: /docker_restart <container_name>
+        """
+        reply_message = self._require_message(update)
+        
+        if not context.args:
+             await self._reply_markdown(
+                reply_message,
+                "Usage: `/docker_restart <container_name>`"
+            )
+             return
+
+        container_name = context.args[0]
+        # Minimal sanitization, though docker CLI handles errors well.
+        if not container_name.replace("-", "").replace(".", "").replace("_", "").isalnum():
+             await self._reply_markdown(reply_message, "Invalid container name.")
+             return
+
+        cmd = ["docker", "restart", container_name]
+        output = await run_command(cmd)
+        
+        if not output.strip():
+            # success usually outputs the container name
+             output = f"Container {container_name} restarted."
+        
+        await self._reply_markdown(
+            reply_message,
+            f"*Docker Restart*\n```\n{escape_markdown_code(output)}\n```"
+        )
+
+
+__all__ = ["DockerStatusCommand", "DockerListCommand", "DockerRestartCommand"]
