@@ -44,3 +44,27 @@ def test_config_custom_values(monkeypatch):
     assert config.gohome_timeout_seconds == 4.5
     assert config.emby_data_path == "/data/emby"
     assert config.media_path == "/data/media"
+
+
+def test_config_enabled_commands_unset_means_all(monkeypatch):
+    monkeypatch.delenv("ENABLED_COMMANDS", raising=False)
+
+    config = BottyConfig.from_env()
+
+    assert config.enabled_commands is None
+
+
+def test_config_enabled_commands_empty_means_all(monkeypatch):
+    monkeypatch.setenv("ENABLED_COMMANDS", "")
+
+    config = BottyConfig.from_env()
+
+    assert config.enabled_commands is None
+
+
+def test_config_enabled_commands_parsed_list(monkeypatch):
+    monkeypatch.setenv("ENABLED_COMMANDS", "status, logs, ping")
+
+    config = BottyConfig.from_env()
+
+    assert config.enabled_commands == ["status", "logs", "ping"]

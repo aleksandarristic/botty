@@ -23,7 +23,7 @@ class BottyConfig:
         ]
 
         enabled_cmd_env = os.getenv("ENABLED_COMMANDS")
-        if enabled_cmd_env is not None:
+        if enabled_cmd_env is not None and enabled_cmd_env.strip():
             enabled_commands = [
                 cmd.strip() for cmd in enabled_cmd_env.split(",") if cmd.strip()
             ]
