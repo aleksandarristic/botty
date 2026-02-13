@@ -400,15 +400,26 @@ build_python_env_as_service_user() {
   local group="$2"
   local dir="$3"
 
-  if [[ -e "$dir/.venv" ]]; then
-    msg "${YELLOW}Removing existing virtual environment at $dir/.venv...${NOFORMAT}"
-    sudo rm -rf "$dir/.venv"
-  fi
+  msg "${YELLOW}Resetting virtual environment at $dir/.venv...${NOFORMAT}"
+  sudo rm -rf "$dir/.venv"
 
   msg "\n${BOLD}Creating Python virtual environment at $dir/.venv...${NOFORMAT}"
-  # Use resolved python interpreter and copy binaries into the venv so runtime
-  # does not depend on access to the source interpreter path.
-  sudo "$PYTHON_BIN" -m venv --copies "$dir/.venv"
+  # Prefer copies to reduce runtime coupling to source interpreter path.
+  # Some distros/Python builds can throw SameFileError for python3; retry without --copies.
+  local venv_err
+  venv_err="$(mktemp)"
+  if ! sudo "$PYTHON_BIN" -m venv --copies "$dir/.venv" 2>"$venv_err"; then
+    if rg -q "are the same file" "$venv_err"; then
+      msg "${YELLOW}venv --copies failed with same-file error; retrying without --copies...${NOFORMAT}"
+      sudo rm -rf "$dir/.venv"
+      sudo "$PYTHON_BIN" -m venv "$dir/.venv"
+    else
+      cat "$venv_err" >&2
+      rm -f "$venv_err"
+      die "Failed to create virtual environment with $PYTHON_BIN"
+    fi
+  fi
+  rm -f "$venv_err"
   sudo chown -R "$user:$group" "$dir/.venv"
 
   msg "${BOLD}Installing Python packages as $user...${NOFORMAT}"
