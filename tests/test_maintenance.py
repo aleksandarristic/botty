@@ -15,6 +15,7 @@ def mock_update():
 @pytest.fixture
 def mock_context():
     context = AsyncMock()
+    context.args = []
     return context
 
 @pytest.mark.asyncio

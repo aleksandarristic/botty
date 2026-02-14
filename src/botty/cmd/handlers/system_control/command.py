@@ -9,18 +9,19 @@ class ServiceCommand(Command):
     name = "service"
     description = "Manage system services (start/stop/restart/status)"
     sudo = True
+    requires_totp = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
-        Usage: /service <service_name> <action>
+        Usage: /service <service_name> <action> <totp>
         Actions: start, stop, restart, status
         """
         reply_message = self._require_message(update)
         
-        if not context.args or len(context.args) < 2:
+        if not context.args or len(context.args) < 3:
             await self._reply_markdown(
                 reply_message,
-                "Usage: `/service <service_name> <action>`\n"
+                "Usage: `/service <service_name> <action> <totp>`\n"
                 "Actions: `start`, `stop`, `restart`, `status`"
             )
             return
@@ -45,6 +46,19 @@ class ServiceCommand(Command):
             )
              return
 
+        if not self.config.is_service_allowed(service_name):
+             if not self.config.service_allowlist:
+                 await self._reply_markdown(
+                    reply_message,
+                    "Service control blocked: `BOTTY_SERVICE_ALLOWLIST` is empty."
+                )
+             else:
+                 await self._reply_markdown(
+                    reply_message,
+                    "Service control blocked: service is not in `BOTTY_SERVICE_ALLOWLIST`."
+                )
+             return
+
         cmd = ["systemctl", action, service_name]
         
         # For status, we want to capture output. For others, just success/fail mostly, 
@@ -60,12 +74,6 @@ class ServiceCommand(Command):
             reply_message,
             f"*Service {action.capitalize()}*\n```\n{escape_markdown_code(output)}\n```"
         )
-
-    def requires_totp_for(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-        if not context.args or len(context.args) < 2:
-            return False
-        action = context.args[1].lower()
-        return action in {"start", "stop", "restart"}
 
 
 class RebootCommand(Command):

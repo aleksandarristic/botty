@@ -51,8 +51,6 @@ class Command(ABC):
         """Shared entrypoint for command execution."""
         message = self._get_message(update)
         if self.auth_required and not self.config.is_authorized(update):
-            if message is not None:
-                await message.reply_text("You are not authorized to use this command.")
             return
         if message is None:
             return

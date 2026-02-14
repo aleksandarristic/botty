@@ -12,6 +12,8 @@ async def test_network_tests_integration(MockAsyncClient, monkeypatch):
     config = BottyConfig(
         telegram_bot_token="test_token",
         authorized_user_ids=["123"],
+        authorized_chat_ids=[],
+        service_allowlist=["botty"],
         enabled_commands=None,
         gohome_api_url="http://stub/status",
         gohome_timeout_seconds=10.0,
@@ -41,6 +43,8 @@ async def test_network_tests_integration(MockAsyncClient, monkeypatch):
 
     update = MagicMock()
     update.effective_user.id = 123
+    update.effective_chat.id = 999
+    update.effective_chat.type = "private"
     update.message.reply_text = AsyncMock()
 
     await cmd.handle(update, None)

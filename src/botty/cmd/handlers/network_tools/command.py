@@ -10,17 +10,18 @@ from botty.utils import escape_markdown_code, run_command, escape_markdown
 class PingCommand(Command):
     name = "ping"
     description = "Ping a host"
+    requires_totp = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
-        Usage: /ping <host>
+        Usage: /ping <host> <totp>
         """
         reply_message = self._require_message(update)
         
-        if not context.args:
+        if not context.args or len(context.args) < 2:
              await self._reply_markdown(
                 reply_message,
-                "Usage: `/ping <host>`"
+                "Usage: `/ping <host> <totp>`"
             )
              return
 

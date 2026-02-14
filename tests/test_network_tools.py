@@ -18,7 +18,7 @@ def mock_context():
 @pytest.mark.asyncio
 async def test_ping_command(mock_update, mock_context):
     cmd = PingCommand(AsyncMock())
-    mock_context.args = ["google.com"]
+    mock_context.args = ["google.com", "123456"]
     
     with patch("botty.cmd.handlers.network_tools.command.run_command", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = "PING google.com\n64 bytes from..."

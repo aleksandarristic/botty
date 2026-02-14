@@ -5,9 +5,10 @@ This document describes the current command behavior implemented under `src/bott
 ## Global Behavior
 
 - Authorization: all commands require an authorized user.
+- Chat scope: group/supergroup/channel chats are allowed only when their chat ID is in `AUTHORIZED_CHAT_ID`; unauthorized requests are ignored without a response.
 - Parse mode: responses are sent with Telegram MarkdownV2 and escaped for safety.
 - Command execution timeout: shell commands default to 10 seconds.
-- TOTP confirmation: state-changing commands require a 6-digit TOTP code as the final argument.
+- TOTP confirmation: selected sensitive commands require a 6-digit TOTP code as the final argument.
 - Privileged execution: commands marked `sudo=True` run through the base command sudo path.
   - With `BOTTY_SUDO_PASSWORD` set: `sudo -S` with password from env.
   - Without it: `sudo -n` (requires `NOPASSWD` sudoers).
@@ -25,14 +26,14 @@ This document describes the current command behavior implemented under `src/bott
 | `/docker_status [target]` | `DockerStatusCommand` | Yes | No | Docker daemon + optional compose status |
 | `/docker_list` | `DockerListCommand` | Yes | No | List containers and statuses |
 | `/docker_restart <container> <totp>` | `DockerRestartCommand` | Yes | No | Restart one container |
-| `/service <name> <action> [totp]` | `ServiceCommand` | Yes | Yes | `systemctl` service control |
+| `/service <name> <action> <totp>` | `ServiceCommand` | Yes | Yes | `systemctl` service control (allowlist enforced) |
 | `/reboot confirm <totp>` | `RebootCommand` | Yes | Yes | Reboot host |
-| `/logs <service>` | `LogsCommand` | Yes | Yes | Last 20 journal lines for a unit |
+| `/logs <service> <totp>` | `LogsCommand` | Yes | Yes | Last 20 journal lines for an allowlisted unit |
 | `/temp` | `TempCommand` | Yes | No | CPU/system temperatures |
 | `/top` | `TopCommand` | Yes | No | Top CPU processes |
-| `/ping <host>` | `PingCommand` | Yes | No | Ping target host |
+| `/ping <host> <totp>` | `PingCommand` | Yes | No | Ping target host |
 | `/wol <mac> <totp>` | `WolCommand` | Yes | No | Send Wake-on-LAN packet |
-| `/check_updates` | `CheckUpdatesCommand` | Yes | No | `apt list --upgradable` |
+| `/check_updates <totp>` | `CheckUpdatesCommand` | Yes | No | `apt list --upgradable` |
 | `/upgrade_bot confirm <totp>` | `UpgradeBotCommand` | Yes | Partial | `git pull` and restart bot service |
 
 ## Detailed Command Notes
@@ -79,9 +80,10 @@ This document describes the current command behavior implemented under `src/bott
 - Validates container name with a conservative allow-list (`[A-Za-z0-9._-]`).
 - Runs `docker restart <container>`.
 
-### `/service <name> <action> [totp]`
+### `/service <name> <action> <totp>`
 - Allowed actions: `start`, `stop`, `restart`, `status`.
-- `start`, `stop`, and `restart` require a trailing TOTP code; `status` does not.
+- Requires trailing TOTP code for all actions.
+- Service must be in `BOTTY_SERVICE_ALLOWLIST`.
 - Service name is sanitized before execution.
 - Runs `systemctl <action> <service>` through sudo-enabled base execution.
 
@@ -89,7 +91,8 @@ This document describes the current command behavior implemented under `src/bott
 - Requires explicit `confirm` argument.
 - Runs `reboot` through sudo-enabled base execution.
 
-### `/logs <service>`
+### `/logs <service> <totp>`
+- Service must be in `BOTTY_SERVICE_ALLOWLIST`.
 - Service name is sanitized.
 - Runs `journalctl -u <service> -n 20 --no-pager` through sudo-enabled base execution.
 - Truncates long output to last 3000 chars.
@@ -105,7 +108,7 @@ This document describes the current command behavior implemented under `src/bott
   - `ps -eo pid,command,pcpu,pmem -r`
 - Returns header + top 5 processes.
 
-### `/ping <host>`
+### `/ping <host> <totp>`
 - Validates host against `^[a-zA-Z0-9.-]+$`.
 - Runs `ping -c 3 <host>`.
 
@@ -113,7 +116,7 @@ This document describes the current command behavior implemented under `src/bott
 - Accepts `:` or `-` separated MAC addresses.
 - Sends UDP broadcast magic packet to `255.255.255.255:9`.
 
-### `/check_updates`
+### `/check_updates <totp>`
 - Runs `apt list --upgradable`.
 - Removes `Listing...` line from output.
 

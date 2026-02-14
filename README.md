@@ -65,13 +65,14 @@ Run the bot locally with `botty`.
 
 - `TELEGRAM_BOT_TOKEN`: token from BotFather.
 - `AUTHORIZED_USER_ID`: comma-separated list of Telegram IDs who may use the commands.
+- `AUTHORIZED_CHAT_ID`: optional comma-separated list of non-private chat IDs (groups/supergroups/channels) where commands are allowed. Private chats only require an authorized user ID.
 - `ENABLED_COMMANDS`: optional comma-separated list of command names to enable (e.g., `status,network_tests`). If omitted, all commands are enabled. `/start` is always enabled.
 - `GOHOME_API_URL`: endpoint for network results (default `http://localhost:8080/status`).
 - `EMBY_DATA_PATH` / `MEDIA_PATH`: paths used for drive checks; defaults `/mnt/embydata` and `/mnt/media`.
 - `TELEGRAM_POLL_TIMEOUT_SECONDS`: Telegram long-poll timeout in seconds (default `300`; increase to reduce poll-frequency log noise).
-- `TOTP_SECRET`: base32 TOTP secret used to confirm state-changing commands.
+- `TOTP_SECRET`: base32 TOTP secret used to confirm sensitive commands.
 - `TOTP_WINDOW_STEPS`: allowed TOTP clock drift in 30-second steps (default `1`).
-- `BOTTY_SERVICE_ALLOWLIST`: comma-separated service names allowed for `/service` and `/logs` sudo policy (for example `botty,nginx`).
+- `BOTTY_SERVICE_ALLOWLIST`: comma-separated service names allowed for `/service` and `/logs` (enforced in-app and in sudo policy), for example `botty,nginx`.
 - `BOTTY_SUDO_PASSWORD`: optional sudo password used for privileged commands when command handlers enable `sudo=True`.
 
 Service installations store these values in `botty.env`, whereas `.env` is used during manual runs. Keep `botty.env` private and out of version control.
@@ -91,18 +92,18 @@ Service installations store these values in `botty.env`, whereas `.env` is used 
 
 ## Existing Commands
 
-All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py`. Authorization is enforced in the `Command` base class for every command, including `/start`.
+All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py`. Authorization is enforced in the `Command` base class for every command, including `/start`. Unauthorized requests are silently ignored.
 
 ### System & Control
 - `/start`: List the available commands.
 - `/status`: Reports uptime, memory, and disk usage.
-- `/service <name> <action> [totp]`: Manage system services (`start`, `stop`, `restart`, `status`). Requires `sudo`; `start/stop/restart` require TOTP.
+- `/service <name> <action> <totp>`: Manage system services (`start`, `stop`, `restart`, `status`). Requires `sudo` + TOTP. Service must be in `BOTTY_SERVICE_ALLOWLIST`.
 - `/reboot confirm <totp>`: Reboots the server. Requires `sudo` + TOTP.
 
 ### Monitoring
 - `/top`: Returns the top 5 CPU-consuming processes.
 - `/temp`: Reports system temperatures (via `sensors` or `/sys/class/thermal`).
-- `/logs <service>`: Returns the last 20 lines of `journalctl -u <service>`. Requires `sudo`.
+- `/logs <service> <totp>`: Returns the last 20 lines of `journalctl -u <service>`. Requires `sudo` + TOTP. Service must be in `BOTTY_SERVICE_ALLOWLIST`.
 
 ### Docker
 - `/docker_status [compose_dir]`: Reports Docker daemon info and optionally `docker compose ps`.
@@ -111,11 +112,11 @@ All commands are registered dynamically via the `command_registry` in `src/botty
 
 ### Network
 - `/network_tests`: Queries the GoHome API for speedtest and device metrics.
-- `/ping <host>`: Performs a simple ping check.
+- `/ping <host> <totp>`: Performs a simple ping check (TOTP required).
 - `/wol <mac> <totp>`: Sends a Wake-on-LAN magic packet (TOTP required).
 
 ### Maintenance
-- `/check_updates`: Checks for upgradable packages (via `apt`).
+- `/check_updates <totp>`: Checks for upgradable packages (via `apt`, TOTP required).
 - `/upgrade_bot confirm <totp>`: Pulls latest code from git and restarts the bot service (TOTP required).
 
 Detailed per-command behavior, arguments, output format, and operational notes are documented in `COMMANDS.md`.
@@ -135,11 +136,11 @@ For production, configure narrowly scoped passwordless sudo for the bot service 
 
 | Command | Underlying OS command(s) | Needs sudo |
 | --- | --- | --- |
-| `/service <name> <action>` | `systemctl start/stop/restart/status <name>` | Yes |
-| `/logs <service>` | `journalctl -u <service> -n 20 --no-pager` | Yes |
+| `/service <name> <action> <totp>` | `systemctl start/stop/restart/status <name>` | Yes |
+| `/logs <service> <totp>` | `journalctl -u <service> -n 20 --no-pager` | Yes |
 | `/reboot confirm` | `reboot` | Yes |
 | `/upgrade_bot confirm` | `git pull` then `systemctl restart botty` | Only `systemctl` step |
-| `/check_updates` | `apt list --upgradable` | No |
+| `/check_updates <totp>` | `apt list --upgradable` | No |
 | `/status`, `/top`, `/temp`, `/docker_*`, `/network_*` | read-only process/network/docker commands | No (unless your host requires it for docker) |
 
 ### Recommended sudoers (service allow-list)

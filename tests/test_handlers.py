@@ -25,6 +25,8 @@ def test_config():
     return BottyConfig(
         telegram_bot_token="test_token",
         authorized_user_ids=[TEST_AUTHORIZED_USER_ID],
+        authorized_chat_ids=[],
+        service_allowlist=["botty", "nginx"],
         enabled_commands=None,
         gohome_api_url="http://localhost:8080/status",
         gohome_timeout_seconds=10.0,
@@ -39,6 +41,8 @@ def mock_update():
     """Fixture to create a mock telegram.Update object."""
     update = MagicMock()
     update.effective_user.id = int(TEST_AUTHORIZED_USER_ID)
+    update.effective_chat.id = 98765
+    update.effective_chat.type = "private"
     update.message.reply_text = AsyncMock()
     update.message.reply_html = AsyncMock()
     return update
@@ -79,9 +83,7 @@ async def test_start_command_requires_authorized_user(mock_update, test_config):
     cmd = StartCommand(test_config, [])
     await cmd.handle(mock_update, None)
 
-    mock_update.message.reply_text.assert_called_once_with(
-        "You are not authorized to use this command."
-    )
+    mock_update.message.reply_text.assert_not_called()
     mock_update.message.reply_html.assert_not_called()
 
 
@@ -116,17 +118,26 @@ async def test_handler_returns_generic_error_on_exception(mock_update, test_conf
 
 @pytest.mark.asyncio
 async def test_unauthorized_user(mock_update, test_config):
-    """Test that an unauthorized user is rejected."""
+    """Test unauthorized users are ignored without a response."""
     test_config.authorized_user_ids = ["a_different_id"]
     mock_update.effective_user.id = 99999  # Unauthorized ID
 
     cmd = StatusCommand(test_config)
-    # We can test any command that has the auth check
     await cmd.handle(mock_update, None)
 
-    mock_update.message.reply_text.assert_called_once_with(
-        "You are not authorized to use this command."
-    )
+    mock_update.message.reply_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_unauthorized_group_is_silent(mock_update, test_config):
+    test_config.authorized_chat_ids = ["-1001"]
+    mock_update.effective_chat.type = "group"
+    mock_update.effective_chat.id = -1002
+
+    cmd = StatusCommand(test_config)
+    await cmd.handle(mock_update, None)
+
+    mock_update.message.reply_text.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,7 @@ from botty.utils import escape_markdown, escape_markdown_code
 class CheckUpdatesCommand(Command):
     name = "check_updates"
     description = "Check for system updates (apt)"
+    requires_totp = True
 
     max_display_updates: int = 25
 
@@ -36,9 +37,12 @@ class CheckUpdatesCommand(Command):
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
-        Usage: /check_updates
+        Usage: /check_updates <totp>
         """
         reply_message = self._require_message(update)
+        if context.args and len(context.args) > 1:
+            await self._reply_markdown(reply_message, "Usage: `/check_updates <totp>`")
+            return
         
         # apt list --upgradable
         # apt might complain if not root but usually 'apt list' is fine for users.

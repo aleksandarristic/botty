@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -45,7 +45,10 @@ async def test_temp_command_sensors(mock_update, mock_context):
 
 @pytest.mark.asyncio
 async def test_logs_command_no_args(mock_update, mock_context):
-    cmd = LogsCommand(AsyncMock())
+    config = MagicMock()
+    config.service_allowlist = ["botty"]
+    config.is_service_allowed.return_value = True
+    cmd = LogsCommand(config)
     mock_context.args = []
     
     await cmd.run(mock_update, mock_context)
@@ -55,8 +58,11 @@ async def test_logs_command_no_args(mock_update, mock_context):
 
 @pytest.mark.asyncio
 async def test_logs_command_success(mock_update, mock_context):
-    cmd = LogsCommand(AsyncMock())
-    mock_context.args = ["botty"]
+    config = MagicMock()
+    config.service_allowlist = ["botty"]
+    config.is_service_allowed.return_value = True
+    cmd = LogsCommand(config)
+    mock_context.args = ["botty", "123456"]
     
     with patch("botty.cmd.handlers.base.run_command", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = "Feb 13 12:00:00 botty[123]: Started"
@@ -70,3 +76,17 @@ async def test_logs_command_success(mock_update, mock_context):
         args, _ = mock_update.message.reply_text.call_args
         assert "Logs for botty" in args[0]
         assert "Started" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_logs_command_blocked_by_allowlist(mock_update, mock_context):
+    config = MagicMock()
+    config.service_allowlist = ["botty"]
+    config.is_service_allowed.return_value = False
+    cmd = LogsCommand(config)
+    mock_context.args = ["nginx", "123456"]
+
+    await cmd.run(mock_update, mock_context)
+
+    args, _ = mock_update.message.reply_text.call_args
+    assert "not in `BOTTY_SERVICE_ALLOWLIST`" in args[0]

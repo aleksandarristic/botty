@@ -105,17 +105,18 @@ class LogsCommand(Command):
     name = "logs"
     description = "Show service logs"
     sudo = True
+    requires_totp = True
 
     async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
-        Usage: /logs <service_name>
+        Usage: /logs <service_name> <totp>
         """
         reply_message = self._require_message(update)
         
-        if not context.args:
+        if not context.args or len(context.args) < 2:
              await self._reply_markdown(
                 reply_message,
-                "Usage: `/logs <service_name>`"
+                "Usage: `/logs <service_name> <totp>`"
             )
              return
 
@@ -123,6 +124,19 @@ class LogsCommand(Command):
         # Sanitize
         if not service_name.replace("-", "").replace(".", "").replace("_", "").isalnum():
              await self._reply_markdown(reply_message, "Invalid service name.")
+             return
+
+        if not self.config.is_service_allowed(service_name):
+             if not self.config.service_allowlist:
+                 await self._reply_markdown(
+                    reply_message,
+                    "Logs blocked: `BOTTY_SERVICE_ALLOWLIST` is empty."
+                )
+             else:
+                 await self._reply_markdown(
+                    reply_message,
+                    "Logs blocked: service is not in `BOTTY_SERVICE_ALLOWLIST`."
+                )
              return
 
         cmd = ["journalctl", "-u", service_name, "-n", "20", "--no-pager"]
