@@ -125,7 +125,10 @@ def test_scaffold_command_renders_security_and_shell_options(tmp_path):
     assert "auth_required = True" in source
     assert "sudo = True" in source
     assert "requires_totp = True" in source
-    assert 'output = await self._run_command(["uptime", "-p"], cwd="/tmp")' in source
+    assert 'command = ["uptime", "-p"]' in source
+    assert "command.extend(script_args)" in source
+    assert "if self.requires_totp and script_args:" in source
+    assert 'output = await self._run_command(command, cwd="/tmp")' in source
     assert '*CWD:*' in source
 
 

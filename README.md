@@ -219,6 +219,7 @@ Botty uses a package-per-command style under `src/botty/cmd/handlers/`. Follow t
      --shell-command "./update.sh" \
      --cwd "/home/leka/Code/pycodebridge"
    ```
+   For shell templates, Telegram command args are forwarded to the shell command when provided; with no args, only the base command runs.
    This creates:
    - `src/botty/cmd/handlers/hello/command.py`
    - `src/botty/cmd/handlers/hello/__init__.py`

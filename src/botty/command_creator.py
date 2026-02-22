@@ -66,7 +66,8 @@ def _render_command_template(
         "",
         "    async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:",
         "        message = self._require_message(update)",
-        '        args = " ".join(context.args).strip() if context.args else "(no args)"',
+        "        raw_args = [str(arg) for arg in context.args] if context.args else []",
+        '        args = " ".join(raw_args).strip() if raw_args else "(no args)"',
         f"        purpose = {json.dumps(behavior)}",
     ]
 
@@ -74,12 +75,21 @@ def _render_command_template(
         command_literal = "[" + ", ".join(json.dumps(part) for part in shell_command) + "]"
         cwd_literal = json.dumps(shell_cwd) if shell_cwd else None
         run_command_line = (
-            f"        output = await self._run_command({command_literal}, cwd={cwd_literal})"
+            f"        output = await self._run_command(command, cwd={cwd_literal})"
             if cwd_literal
-            else f"        output = await self._run_command({command_literal})"
+            else "        output = await self._run_command(command)"
         )
         lines.extend(
             [
+                f"        command = {command_literal}",
+                "        script_args = list(raw_args)",
+                "        if self.requires_totp and script_args:",
+                "            maybe_totp = script_args[-1].strip()",
+                "            if maybe_totp.isdigit() and len(maybe_totp) == 6:",
+                "                script_args = script_args[:-1]",
+                "        if script_args:",
+                "            command.extend(script_args)",
+                '        args = " ".join(script_args).strip() if script_args else "(no args)"',
                 run_command_line,
                 '        output_text = output.strip() if output.strip() else "(no output)"',
                 "        reply = (",
