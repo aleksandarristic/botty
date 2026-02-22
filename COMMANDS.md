@@ -27,6 +27,7 @@ This document describes the current command behavior implemented under `src/bott
 | `/docker_list` | `DockerListCommand` | Yes | No | List containers and statuses |
 | `/docker_restart <container> <totp>` | `DockerRestartCommand` | Yes | No | Restart one container |
 | `/service <name> <action> <totp>` | `ServiceCommand` | Yes | Yes | `systemctl` service control (allowlist enforced) |
+| `/restartbot <totp>` | `RestartBotCommand` | Yes | Yes | Restart `botty` service (allowlist enforced) |
 | `/reboot confirm <totp>` | `RebootCommand` | Yes | Yes | Reboot host |
 | `/logs <service> <totp>` | `LogsCommand` | Yes | Yes | Last 20 journal lines for an allowlisted unit |
 | `/temp` | `TempCommand` | Yes | No | CPU/system temperatures |
@@ -90,6 +91,12 @@ This document describes the current command behavior implemented under `src/bott
 ### `/reboot confirm <totp>`
 - Requires explicit `confirm` argument.
 - Runs `reboot` through sudo-enabled base execution.
+
+### `/restartbot <totp>`
+- Restarts the `botty` service to load new command handlers.
+- Requires trailing TOTP code.
+- Requires `botty` in `BOTTY_SERVICE_ALLOWLIST`.
+- Runs `systemctl restart botty` through sudo-enabled base execution.
 
 ### `/logs <service> <totp>`
 - Service must be in `BOTTY_SERVICE_ALLOWLIST`.

@@ -2,7 +2,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from botty.cmd.handlers.system_control.command import RebootCommand, ServiceCommand
+from botty.cmd.handlers.system_control.command import (
+    RebootCommand,
+    RestartBotCommand,
+    ServiceCommand,
+)
 
 @pytest.fixture
 def mock_update():
@@ -85,3 +89,52 @@ async def test_reboot_command_confirm(mock_update, mock_context):
         assert mock_update.message.reply_text.called
         args, _ = mock_update.message.reply_text.call_args
         assert "Rebooting system now" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_restartbot_command_invalid_args(mock_update, mock_context):
+    config = MagicMock()
+    config.service_allowlist = ["botty"]
+    config.is_service_allowed.return_value = True
+    cmd = RestartBotCommand(config)
+    mock_context.args = []
+
+    await cmd.run(mock_update, mock_context)
+
+    assert mock_update.message.reply_text.called
+    args, _ = mock_update.message.reply_text.call_args
+    assert "Usage: `/restartbot <totp>`" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_restartbot_command_blocked_by_allowlist(mock_update, mock_context):
+    config = MagicMock()
+    config.service_allowlist = ["nginx"]
+    config.is_service_allowed.return_value = False
+    cmd = RestartBotCommand(config)
+    mock_context.args = ["123456"]
+
+    await cmd.run(mock_update, mock_context)
+
+    args, _ = mock_update.message.reply_text.call_args
+    assert "`botty` is not in `BOTTY_SERVICE_ALLOWLIST`" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_restartbot_command_success(mock_update, mock_context):
+    config = MagicMock()
+    config.service_allowlist = ["botty"]
+    config.is_service_allowed.return_value = True
+    cmd = RestartBotCommand(config)
+    mock_context.args = ["123456"]
+
+    with patch("botty.cmd.handlers.base.run_command", new_callable=AsyncMock) as mock_run:
+        mock_run.return_value = ""
+        await cmd.run(mock_update, mock_context)
+
+        mock_run.assert_called_with(
+            ["systemctl", "restart", "botty"], timeout=10.0, sudo=True
+        )
+        assert mock_update.message.reply_text.called
+        args, _ = mock_update.message.reply_text.call_args
+        assert "Restarting bot service now" in args[0]

@@ -101,3 +101,42 @@ class RebootCommand(Command):
         # Fire and forget mostly, or wait a bit. 
         # The bot will die shortly after this.
         await self._run_command(["reboot"])
+
+
+class RestartBotCommand(Command):
+    name = "restartbot"
+    description = "Restart the bot service to pick up new commands"
+    sudo = True
+    requires_totp = True
+
+    async def run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Usage: /restartbot <totp>
+        """
+        reply_message = self._require_message(update)
+
+        if not context.args or len(context.args) != 1:
+            await self._reply_markdown(
+                reply_message,
+                "Usage: `/restartbot <totp>`",
+            )
+            return
+
+        if not self.config.is_service_allowed("botty"):
+            if not self.config.service_allowlist:
+                await self._reply_markdown(
+                    reply_message,
+                    "Restart blocked: `BOTTY_SERVICE_ALLOWLIST` is empty.",
+                )
+            else:
+                await self._reply_markdown(
+                    reply_message,
+                    "Restart blocked: `botty` is not in `BOTTY_SERVICE_ALLOWLIST`.",
+                )
+            return
+
+        await self._reply_markdown(
+            reply_message,
+            "Restarting bot service now...",
+        )
+        await self._run_command(["systemctl", "restart", "botty"])

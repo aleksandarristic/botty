@@ -14,7 +14,7 @@ class StartCommand(Command):
     description = "Shows this message"
     _section_order = [
         ("Core", {"start", "status"}),
-        ("Control", {"service", "reboot", "logs"}),
+        ("Control", {"service", "reboot", "restartbot", "logs"}),
         ("Monitoring", {"top", "temp", "check_updates", "upgrade_bot"}),
         ("Containers", {"docker_status", "docker_list", "docker_restart"}),
         ("Network", {"network_tests", "ping", "wol"}),

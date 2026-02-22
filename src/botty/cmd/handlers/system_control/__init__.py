@@ -1,3 +1,3 @@
-from .command import ServiceCommand, RebootCommand
+from .command import ServiceCommand, RebootCommand, RestartBotCommand
 
-__all__ = ["ServiceCommand", "RebootCommand"]
+__all__ = ["ServiceCommand", "RebootCommand", "RestartBotCommand"]

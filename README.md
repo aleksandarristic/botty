@@ -98,6 +98,7 @@ All commands are registered dynamically via the `command_registry` in `src/botty
 - `/start`: List the available commands.
 - `/status`: Reports uptime, memory, and disk usage.
 - `/service <name> <action> <totp>`: Manage system services (`start`, `stop`, `restart`, `status`). Requires `sudo` + TOTP. Service must be in `BOTTY_SERVICE_ALLOWLIST`.
+- `/restartbot <totp>`: Restarts the `botty` service to load newly added commands. Requires `sudo` + TOTP. `botty` must be in `BOTTY_SERVICE_ALLOWLIST`.
 - `/reboot confirm <totp>`: Reboots the server. Requires `sudo` + TOTP.
 
 ### Monitoring
@@ -137,6 +138,7 @@ For production, configure narrowly scoped passwordless sudo for the bot service 
 | Command | Underlying OS command(s) | Needs sudo |
 | --- | --- | --- |
 | `/service <name> <action> <totp>` | `systemctl start/stop/restart/status <name>` | Yes |
+| `/restartbot <totp>` | `systemctl restart botty` | Yes |
 | `/logs <service> <totp>` | `journalctl -u <service> -n 20 --no-pager` | Yes |
 | `/reboot confirm` | `reboot` | Yes |
 | `/upgrade_bot confirm` | `git pull` then `systemctl restart botty` | Only `systemctl` step |
