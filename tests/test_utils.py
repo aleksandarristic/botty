@@ -94,6 +94,23 @@ async def test_run_command_sudo_with_password_uses_stdin(monkeypatch):
     assert fake_process.communicate_input == b"secret\n"
 
 
+@pytest.mark.asyncio
+async def test_run_command_passes_cwd(monkeypatch):
+    captured = {}
+    fake_process = _FakeProcess(stdout=b"ok\n")
+
+    async def _fake_exec(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return fake_process
+
+    monkeypatch.setattr("botty.utils.asyncio.create_subprocess_exec", _fake_exec)
+    result = await run_command(["pwd"], cwd="/tmp")
+
+    assert result.strip() == "ok"
+    assert captured["kwargs"]["cwd"] == "/tmp"
+
+
 def test_escape_markdown():
     """Test the escape_markdown function (for non-code text)."""
     # No special characters

@@ -14,6 +14,7 @@ async def run_command(
     timeout: float = 10.0,
     sudo: bool = False,
     sudo_password_env: str = "BOTTY_SUDO_PASSWORD",
+    cwd: str | None = None,
 ) -> str:
     """Runs a subprocess and returns the output, with an optional timeout."""
     if not command:
@@ -47,6 +48,7 @@ async def run_command(
             stderr=asyncio.subprocess.PIPE,
             stdin=stdin,
             env=env,
+            cwd=cwd,
         )
     except FileNotFoundError as exc:
         return f"Error: {exc}"
@@ -77,6 +79,7 @@ async def run_command(
                 timeout=min(timeout, 2.0),
                 env=env,
                 input=f"{sudo_password}\n" if use_sudo_stdin else None,
+                cwd=cwd,
             )
         except subprocess.TimeoutExpired:
             return f"Error: Command timed out after {timeout} seconds"

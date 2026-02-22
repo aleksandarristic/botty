@@ -89,10 +89,13 @@ class Command(ABC):
         command: list[str],
         timeout: float = 10.0,
         sudo: bool | None = None,
+        cwd: str | None = None,
     ) -> str:
         """Execute shell commands with command-level sudo defaults."""
         use_sudo = self.sudo if sudo is None else sudo
-        return await run_command(command, timeout=timeout, sudo=use_sudo)
+        if cwd is None:
+            return await run_command(command, timeout=timeout, sudo=use_sudo)
+        return await run_command(command, timeout=timeout, sudo=use_sudo, cwd=cwd)
 
     @abstractmethod
     async def run(self, update: Update, context) -> None:

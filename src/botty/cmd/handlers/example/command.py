@@ -14,7 +14,7 @@ class ExampleCommand(Command):
     2. Define the 'description' (shown in /start).
     3. (Optional) Set 'auth_required = False' if the command should be public.
     4. Implement the 'run' method with your logic.
-    5. Add the class to ALL_COMMAND_CLASSES in src/botty/cmd/handlers/__init__.py.
+    5. Export the class from src/botty/cmd/handlers/<command>/__init__.py.
     """
 
     # The command string the user types (e.g., /example)

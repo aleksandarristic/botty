@@ -24,6 +24,7 @@ dev = [
 
 [project.scripts]
 botty = "botty.main:main"
+botty-create-command = "botty.command_creator:main"
 
 
 [tool.setuptools]

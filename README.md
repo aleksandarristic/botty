@@ -92,7 +92,7 @@ Service installations store these values in `botty.env`, whereas `.env` is used 
 
 ## Existing Commands
 
-All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py`. Authorization is enforced in the `Command` base class for every command, including `/start`. Unauthorized requests are silently ignored.
+All commands are registered dynamically via the `command_registry` in `src/botty/cmd/__init__.py`, with handler auto-discovery from `src/botty/cmd/handlers/*`. Authorization is enforced in the `Command` base class for every command, including `/start`. Unauthorized requests are silently ignored.
 
 ### System & Control
 - `/start`: List the available commands.
@@ -199,13 +199,31 @@ Then run installer:
 
 Botty uses a package-per-command style under `src/botty/cmd/handlers/`. Follow this workflow:
 
-1. Create a handler package.
+1. Scaffold a new command package (recommended).
    Example for a command named `hello`:
    ```bash
-   mkdir -p src/botty/cmd/handlers/hello
+   botty-create-command hello --description "Example custom command"
    ```
+   Interactive mode (prompts for behavior, auth, sudo/TOTP, optional shell command + cwd):
+   ```bash
+   botty-create-command --interactive
+   ```
+   Preview only (no file writes):
+   ```bash
+   botty-create-command hello --description "Example custom command" --dry-run
+   ```
+   Non-interactive shell template with explicit working directory:
+   ```bash
+   botty-create-command update_bridge \
+     --description "Run pycodebridge update script" \
+     --shell-command "./update.sh" \
+     --cwd "/home/leka/Code/pycodebridge"
+   ```
+   This creates:
+   - `src/botty/cmd/handlers/hello/command.py`
+   - `src/botty/cmd/handlers/hello/__init__.py`
 
-2. Add `command.py` with a command class.
+2. Edit `command.py` with your command logic.
    ```python
    # src/botty/cmd/handlers/hello/command.py
    from telegram import Update
@@ -232,37 +250,27 @@ Botty uses a package-per-command style under `src/botty/cmd/handlers/`. Follow t
            await message.reply_text(reply, parse_mode="MarkdownV2")
    ```
 
-3. Add package exports.
-   ```python
-   # src/botty/cmd/handlers/hello/__init__.py
-   from .command import HelloCommand as HelloCommand
+3. Command discovery and registration are automatic.
+   - Any package under `src/botty/cmd/handlers/<name>/` with an exported `*Command` class in `__all__` is discovered at startup.
+   - No edits to central registry files are required.
 
-   __all__ = ["HelloCommand"]
-   ```
-
-4. Register the command class.
-   Edit `src/botty/cmd/handlers/__init__.py`:
-   - import it (`from .hello import HelloCommand`)
-   - add it to `ALL_COMMAND_CLASSES`
-   - add it to `__all__`
-
-5. Optional: add handler-local support modules.
+4. Optional: add handler-local support modules.
    If logic is command-specific (formatters, HTTP clients, checks, caching), keep it in the same package:
    - `src/botty/cmd/handlers/hello/checks.py`
    - `src/botty/cmd/handlers/hello/formatter.py`
    Shared utilities stay in `src/botty/utils.py` (for example markdown escaping and shell execution helpers).
 
-6. Configure command visibility.
-   - If `ENABLED_COMMANDS` is unset: all commands in `ALL_COMMAND_CLASSES` are enabled.
+5. Configure command visibility.
+   - If `ENABLED_COMMANDS` is unset: all discovered commands are enabled.
    - If set: only listed command names are enabled.
    - `/start` is always enabled and auto-builds its menu from currently enabled commands.
 
-7. Add tests.
+6. Add tests.
    - Add/extend tests in `tests/test_handlers.py`.
    - Patch the correct module path for your handler package (for example `botty.cmd.handlers.hello.command.run_command`).
    - If the command has parser/formatter helpers, add focused unit tests in a dedicated test file.
 
-8. Validate locally.
+7. Validate locally.
    ```bash
    .venv/bin/python -m pytest -q
    .venv/bin/python -m ruff check .

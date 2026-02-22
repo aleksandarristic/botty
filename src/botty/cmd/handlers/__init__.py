@@ -1,56 +1,70 @@
-from .adguard import AdguardStatusCommand
-from .docker import DockerListCommand, DockerRestartCommand, DockerStatusCommand
-from .example import ExampleCommand
-from .maintenance import CheckUpdatesCommand, UpgradeBotCommand
-from .media import EmbyStatusCommand
-from .monitoring import LogsCommand, TempCommand, TopCommand
-from .network import NetworkTestsCommand
-from .network_tools import PingCommand, WolCommand
-from .status import StartCommand, StatusCommand
-from .system_control import RebootCommand, ServiceCommand
+from __future__ import annotations
 
-# List of command classes that can be optionally enabled via configuration.
-# StartCommand is excluded here as it is always enabled and handled specially.
-ALL_COMMAND_CLASSES = [
-    StatusCommand,
-    EmbyStatusCommand,
-    AdguardStatusCommand,
-    NetworkTestsCommand,
-    ExampleCommand,
-    DockerStatusCommand,
-    DockerListCommand,
-    DockerRestartCommand,
-    RebootCommand,
-    ServiceCommand,
-    LogsCommand,
-    TempCommand,
-    TopCommand,
-    PingCommand,
-    WolCommand,
-    CheckUpdatesCommand,
-    UpgradeBotCommand,
-]
+import importlib
+import inspect
+import pkgutil
 
-# Define the public API for this subpackage.
-# Keep this static so type checkers can resolve exports.
-__all__ = [
-    "AdguardStatusCommand",
-    "CheckUpdatesCommand",
-    "DockerListCommand",
-    "DockerRestartCommand",
-    "DockerStatusCommand",
-    "ExampleCommand",
-    "EmbyStatusCommand",
-    "LogsCommand",
-    "NetworkTestsCommand",
-    "PingCommand",
-    "RebootCommand",
-    "ServiceCommand",
-    "StartCommand",
-    "StatusCommand",
-    "TempCommand",
-    "TopCommand",
-    "UpgradeBotCommand",
-    "WolCommand",
+from .base import Command
+from .status import StartCommand
+
+_SKIP_MODULES = {"base"}
+
+
+def _iter_handler_modules():
+    for module_info in pkgutil.iter_modules(__path__):
+        module_name = module_info.name
+        if module_name in _SKIP_MODULES:
+            continue
+        yield importlib.import_module(f"{__name__}.{module_name}")
+
+
+def _iter_command_classes(module):
+    exported_names = getattr(module, "__all__", [])
+    if not isinstance(exported_names, list):
+        exported_names = []
+
+    for name in exported_names:
+        candidate = getattr(module, name, None)
+        if not inspect.isclass(candidate):
+            continue
+        if not issubclass(candidate, Command) or candidate is Command:
+            continue
+        yield candidate
+
+
+def _discover_exported_commands() -> dict[str, type[Command]]:
+    discovered: dict[str, type[Command]] = {}
+    for module in _iter_handler_modules():
+        for command_class in _iter_command_classes(module):
+            existing = discovered.get(command_class.__name__)
+            if existing is not None and existing is not command_class:
+                raise ValueError(
+                    f"duplicate command class export detected: {command_class.__name__}"
+                )
+            discovered[command_class.__name__] = command_class
+    return discovered
+
+
+_EXPORTED_COMMANDS = _discover_exported_commands()
+globals().update(_EXPORTED_COMMANDS)
+
+
+def discover_command_classes() -> list[type[Command]]:
+    commands = []
+    for command_class in _EXPORTED_COMMANDS.values():
+        if command_class is StartCommand:
+            continue
+        if getattr(command_class, "name", None) == "start":
+            continue
+        commands.append(command_class)
+    commands.sort(key=lambda cls: str(getattr(cls, "name", cls.__name__)))
+    return commands
+
+
+ALL_COMMAND_CLASSES = discover_command_classes()
+
+__all__ = sorted(_EXPORTED_COMMANDS) + [
     "ALL_COMMAND_CLASSES",
+    "StartCommand",
+    "discover_command_classes",
 ]
