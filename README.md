@@ -219,6 +219,37 @@ Botty uses a package-per-command style under `src/botty/cmd/handlers/`. Follow t
      --shell-command "./update.sh" \
      --cwd "/home/leka/Code/pycodebridge"
    ```
+   Batch mode from JSON (local file or HTTPS URL), non-interactive by default:
+   ```bash
+   botty-create-command --json ./commands.json
+   botty-create-command --json https://raw.githubusercontent.com/<org>/<repo>/<branch>/commands.json --dry-run
+   ```
+   JSON + interactive edit mode (loads defaults from JSON, then prompts per command):
+   ```bash
+   botty-create-command --json ./commands.json --interactive
+   ```
+   Print built-in JSON schema:
+   ```bash
+   botty-create-command --print-json-schema
+   ```
+   Schema file is also available at `schemas/command-batch.schema.json`.
+   Minimal JSON payload example:
+   ```json
+   {
+     "commands": [
+       {
+         "name": "hello_json",
+         "description": "Example command from JSON",
+         "behavior_summary": "Demo command",
+         "auth_required": true,
+         "sudo": false,
+         "requires_totp": false,
+         "shell_command": "uptime -p",
+         "cwd": "/tmp"
+       }
+     ]
+   }
+   ```
    For shell templates, Telegram command args are forwarded to the shell command when provided; with no args, only the base command runs.
    This creates:
    - `src/botty/cmd/handlers/hello/command.py`

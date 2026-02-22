@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/botty-command-batch.schema.json",
+  "title": "Botty Command Batch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "commands"
+  ],
+  "properties": {
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "description"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "class_name": {
+            "type": "string"
+          },
+          "behavior_summary": {
+            "type": "string"
+          },
+          "auth_required": {
+            "type": "boolean"
+          },
+          "sudo": {
+            "type": "boolean"
+          },
+          "requires_totp": {
+            "type": "boolean"
+          },
+          "shell_command": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "cwd": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

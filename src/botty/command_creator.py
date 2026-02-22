@@ -8,8 +8,51 @@ import re
 import shlex
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 HANDLERS_PACKAGE_PATH = Path("src/botty/cmd/handlers")
+DEFAULT_BEHAVIOR_SUMMARY = "Custom command scaffold"
+
+COMMANDS_JSON_SCHEMA: dict[str, object] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://example.com/schemas/botty-command-batch.schema.json",
+    "title": "Botty Command Batch",
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["commands"],
+    "properties": {
+        "commands": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "description"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "class_name": {"type": "string"},
+                    "behavior_summary": {"type": "string"},
+                    "auth_required": {"type": "boolean"},
+                    "sudo": {"type": "boolean"},
+                    "requires_totp": {"type": "boolean"},
+                    "shell_command": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {"type": "string"},
+                            },
+                        ]
+                    },
+                    "cwd": {"type": "string"},
+                },
+            },
+        }
+    },
+}
 
 
 def _normalize_command_name(raw_name: str) -> str:
@@ -203,6 +246,10 @@ def scaffold_command(
     }
 
 
+def get_commands_json_schema() -> dict[str, object]:
+    return json.loads(json.dumps(COMMANDS_JSON_SCHEMA))
+
+
 def _prompt_text(
     prompt: str,
     *,
@@ -244,12 +291,29 @@ def _prompt_bool(
 
 
 def _collect_interactive_inputs(
-    args: argparse.Namespace, input_fn: Callable[[str], str] | None = None
+    args: argparse.Namespace,
+    defaults: dict[str, object] | None = None,
+    input_fn: Callable[[str], str] | None = None,
 ) -> dict[str, object]:
+    defaults = defaults or {}
+    default_name = str(defaults.get("command_name") or args.name or "")
+    default_description = str(
+        defaults.get("description") or args.description or DEFAULT_BEHAVIOR_SUMMARY
+    )
+    default_class_name = defaults.get("class_name")
+    default_behavior = str(
+        defaults.get("behavior_summary") or DEFAULT_BEHAVIOR_SUMMARY
+    )
+    default_auth = bool(defaults.get("auth_required", True))
+    default_sudo = bool(defaults.get("sudo", False))
+    default_totp = bool(defaults.get("requires_totp", False))
+    default_shell_command = defaults.get("shell_command")
+    default_shell_cwd = defaults.get("shell_cwd")
+
     while True:
         raw_name = _prompt_text(
             "Command name",
-            default=args.name,
+            default=default_name or None,
             required=True,
             input_fn=input_fn,
         )
@@ -261,41 +325,47 @@ def _collect_interactive_inputs(
 
     description = _prompt_text(
         "Description shown in /start",
-        default=args.description,
+        default=default_description,
         required=True,
         input_fn=input_fn,
     )
     class_name = _prompt_text(
         "Class name (leave blank for auto)",
-        default=args.class_name,
+        default=str(default_class_name) if default_class_name else None,
         required=False,
         input_fn=input_fn,
     )
     behavior_summary = _prompt_text(
         "What should this command do",
-        default="Custom command scaffold",
+        default=default_behavior,
         required=True,
         input_fn=input_fn,
     )
     auth_required = _prompt_bool(
         "Require authorized users",
-        default=True,
+        default=default_auth,
         input_fn=input_fn,
     )
     sudo = _prompt_bool(
         "Run shell commands with sudo by default",
-        default=False,
+        default=default_sudo,
         input_fn=input_fn,
     )
     requires_totp = _prompt_bool(
         "Require TOTP code",
-        default=False,
+        default=default_totp,
         input_fn=input_fn,
     )
 
+    if isinstance(default_shell_command, list):
+        default_shell = " ".join(shlex.quote(str(part)) for part in default_shell_command)
+    elif isinstance(default_shell_command, str):
+        default_shell = default_shell_command
+    else:
+        default_shell = ""
     use_shell = _prompt_bool(
         "Include a shell command in the initial template",
-        default=False,
+        default=bool(default_shell),
         input_fn=input_fn,
     )
     shell_command = None
@@ -304,6 +374,7 @@ def _collect_interactive_inputs(
         while True:
             raw_shell = _prompt_text(
                 "Shell command (example: uptime -p)",
+                default=default_shell or None,
                 required=True,
                 input_fn=input_fn,
             )
@@ -318,7 +389,7 @@ def _collect_interactive_inputs(
             break
         shell_cwd = _prompt_text(
             "Working directory for shell command (blank = bot process cwd)",
-            default=None,
+            default=str(default_shell_cwd) if default_shell_cwd else None,
             required=False,
             input_fn=input_fn,
         )
@@ -333,6 +404,170 @@ def _collect_interactive_inputs(
         "requires_totp": requires_totp,
         "shell_command": shell_command,
         "shell_cwd": shell_cwd or None,
+    }
+
+
+def _is_http_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _load_json_payload(source: str) -> object:
+    if _is_http_url(source):
+        req = Request(source, headers={"User-Agent": "botty-create-command/0.1"})
+        with urlopen(req, timeout=15) as response:
+            charset = response.headers.get_content_charset() or "utf-8"
+            return json.loads(response.read().decode(charset))
+
+    payload_path = Path(source).expanduser()
+    if not payload_path.exists():
+        raise FileNotFoundError(f"json source does not exist: {payload_path}")
+    return json.loads(payload_path.read_text(encoding="utf-8"))
+
+
+def _expect_type(value: object, expected_type: type, context: str) -> None:
+    if not isinstance(value, expected_type):
+        raise ValueError(f"{context} must be {expected_type.__name__}")
+
+
+def _normalize_shell_command(raw_shell_command: object, context: str) -> list[str] | None:
+    if raw_shell_command is None:
+        return None
+    if isinstance(raw_shell_command, str):
+        text = raw_shell_command.strip()
+        if not text:
+            raise ValueError(f"{context}.shell_command cannot be empty")
+        try:
+            parsed = shlex.split(text)
+        except ValueError as exc:
+            raise ValueError(f"{context}.shell_command is invalid: {exc}") from exc
+        if not parsed:
+            raise ValueError(f"{context}.shell_command cannot be empty")
+        return parsed
+    if isinstance(raw_shell_command, list):
+        if not raw_shell_command:
+            raise ValueError(f"{context}.shell_command array cannot be empty")
+        parsed = []
+        for idx, part in enumerate(raw_shell_command):
+            if not isinstance(part, str) or not part:
+                raise ValueError(
+                    f"{context}.shell_command[{idx}] must be a non-empty string"
+                )
+            parsed.append(part)
+        return parsed
+    raise ValueError(f"{context}.shell_command must be a string or an array of strings")
+
+
+def _normalize_json_command(raw: object, index: int) -> dict[str, object]:
+    context = f"commands[{index}]"
+    _expect_type(raw, dict, context)
+    command = dict(raw)
+    allowed = {
+        "name",
+        "description",
+        "class_name",
+        "behavior_summary",
+        "auth_required",
+        "sudo",
+        "requires_totp",
+        "shell_command",
+        "cwd",
+    }
+    unknown = sorted(set(command.keys()) - allowed)
+    if unknown:
+        raise ValueError(f"{context} has unknown fields: {', '.join(unknown)}")
+
+    if "name" not in command:
+        raise ValueError(f"{context}.name is required")
+    if "description" not in command:
+        raise ValueError(f"{context}.description is required")
+
+    _expect_type(command["name"], str, f"{context}.name")
+    _expect_type(command["description"], str, f"{context}.description")
+    command_name = _normalize_command_name(command["name"])
+    description = command["description"].strip()
+    if not description:
+        raise ValueError(f"{context}.description cannot be empty")
+
+    class_name = command.get("class_name")
+    if class_name is not None:
+        _expect_type(class_name, str, f"{context}.class_name")
+        if not class_name.strip():
+            class_name = None
+
+    behavior_summary = command.get("behavior_summary", DEFAULT_BEHAVIOR_SUMMARY)
+    _expect_type(behavior_summary, str, f"{context}.behavior_summary")
+    if not behavior_summary.strip():
+        behavior_summary = DEFAULT_BEHAVIOR_SUMMARY
+
+    auth_required = command.get("auth_required", True)
+    sudo = command.get("sudo", False)
+    requires_totp = command.get("requires_totp", False)
+    if not isinstance(auth_required, bool):
+        raise ValueError(f"{context}.auth_required must be boolean")
+    if not isinstance(sudo, bool):
+        raise ValueError(f"{context}.sudo must be boolean")
+    if not isinstance(requires_totp, bool):
+        raise ValueError(f"{context}.requires_totp must be boolean")
+
+    shell_command = _normalize_shell_command(command.get("shell_command"), context)
+
+    shell_cwd = command.get("cwd")
+    if shell_cwd is not None:
+        _expect_type(shell_cwd, str, f"{context}.cwd")
+        shell_cwd = shell_cwd.strip()
+        if not shell_cwd:
+            shell_cwd = None
+    if shell_cwd and not shell_command:
+        raise ValueError(f"{context}.cwd requires shell_command")
+
+    return {
+        "command_name": command_name,
+        "description": description,
+        "class_name": class_name,
+        "behavior_summary": behavior_summary,
+        "auth_required": auth_required,
+        "sudo": sudo,
+        "requires_totp": requires_totp,
+        "shell_command": shell_command,
+        "shell_cwd": shell_cwd,
+    }
+
+
+def _parse_json_commands(source: str) -> list[dict[str, object]]:
+    payload = _load_json_payload(source)
+    if not isinstance(payload, dict):
+        raise ValueError("json root must be an object with a 'commands' array")
+    if set(payload.keys()) - {"commands"}:
+        unknown = sorted(set(payload.keys()) - {"commands"})
+        raise ValueError(f"json root has unknown fields: {', '.join(unknown)}")
+    commands = payload.get("commands")
+    if not isinstance(commands, list):
+        raise ValueError("'commands' must be an array")
+    if not commands:
+        raise ValueError("'commands' must not be empty")
+    return [_normalize_json_command(item, index) for index, item in enumerate(commands)]
+
+
+def _build_non_interactive_options(args: argparse.Namespace) -> dict[str, object]:
+    if not args.name:
+        raise ValueError("name is required unless --interactive or --json is used")
+    parsed_shell_command = None
+    if isinstance(args.shell_command, str) and args.shell_command.strip():
+        try:
+            parsed_shell_command = shlex.split(args.shell_command)
+        except ValueError as exc:
+            raise ValueError(f"invalid --shell-command: {exc}") from exc
+    return {
+        "command_name": args.name,
+        "description": args.description,
+        "class_name": args.class_name,
+        "behavior_summary": DEFAULT_BEHAVIOR_SUMMARY,
+        "auth_required": True,
+        "sudo": False,
+        "requires_totp": False,
+        "shell_command": parsed_shell_command,
+        "shell_cwd": args.cwd,
     }
 
 
@@ -377,6 +612,16 @@ def _parse_args() -> argparse.Namespace:
         help="prompt for command details interactively",
     )
     parser.add_argument(
+        "--json",
+        default=None,
+        help="JSON file path or HTTP(S) URL containing one or more command definitions",
+    )
+    parser.add_argument(
+        "--print-json-schema",
+        action="store_true",
+        help="print the JSON schema for --json payloads and exit",
+    )
+    parser.add_argument(
         "--shell-command",
         default=None,
         help="optional shell command for the template (example: ./update.sh)",
@@ -393,30 +638,70 @@ def main() -> int:
     args = _parse_args()
     project_root = Path(args.project_root).resolve()
 
+    if args.print_json_schema:
+        print(json.dumps(get_commands_json_schema(), indent=2, sort_keys=True))
+        return 0
+
+    if args.json and args.name:
+        print("error: positional name cannot be used with --json")
+        return 1
+
+    if args.json:
+        try:
+            entries = _parse_json_commands(args.json)
+        except (ValueError, FileNotFoundError, json.JSONDecodeError) as exc:
+            print(f"error: {exc}")
+            return 1
+
+        print(f"loaded {len(entries)} command definition(s) from {args.json}")
+        success_count = 0
+        failure_count = 0
+
+        for index, base_options in enumerate(entries, start=1):
+            scaffold_options = base_options
+            if args.interactive:
+                scaffold_options = _collect_interactive_inputs(args, defaults=base_options)
+
+            command_name = str(scaffold_options["command_name"])
+            try:
+                result = scaffold_command(
+                    project_root=project_root,
+                    force=args.force,
+                    dry_run=args.dry_run,
+                    **scaffold_options,
+                )
+            except (ValueError, FileNotFoundError, FileExistsError) as exc:
+                failure_count += 1
+                print(f"[{index}] FAIL /{command_name}: {exc}")
+                continue
+
+            success_count += 1
+            action = "would create" if args.dry_run and result["action"] == "create" else (
+                "would overwrite" if args.dry_run else result["action"]
+            )
+            print(
+                f"[{index}] OK /{result['command_name']} ({result['class_name']}) - {action}"
+            )
+            print(f"      command file: {result['command_file']}")
+            print(f"      package init: {result['package_init']}")
+            if result["shell_command"]:
+                print(f"      shell command: {result['shell_command']}")
+            if result["shell_cwd"]:
+                print(f"      shell cwd: {result['shell_cwd']}")
+
+        if args.dry_run:
+            print("dry run: no files were written")
+        print(f"summary: {success_count} succeeded, {failure_count} failed")
+        return 0 if failure_count == 0 else 1
+
     if args.interactive:
         scaffold_options = _collect_interactive_inputs(args)
     else:
-        if not args.name:
-            print("error: name is required unless --interactive is used")
+        try:
+            scaffold_options = _build_non_interactive_options(args)
+        except ValueError as exc:
+            print(f"error: {exc}")
             return 1
-        parsed_shell_command = None
-        if isinstance(args.shell_command, str) and args.shell_command.strip():
-            try:
-                parsed_shell_command = shlex.split(args.shell_command)
-            except ValueError as exc:
-                print(f"error: invalid --shell-command: {exc}")
-                return 1
-        scaffold_options = {
-            "command_name": args.name,
-            "description": args.description,
-            "class_name": args.class_name,
-            "behavior_summary": "Custom command scaffold",
-            "auth_required": True,
-            "sudo": False,
-            "requires_totp": False,
-            "shell_command": parsed_shell_command,
-            "shell_cwd": args.cwd,
-        }
 
     try:
         result = scaffold_command(
