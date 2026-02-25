@@ -4,6 +4,7 @@ from telegram.ext import Application, CommandHandler
 
 from botty.cmd import get_command_registry
 from botty.config import BottyConfig
+from botty.sudo_policy import build_startup_sudoers_guidance
 
 # Load environment variables from .env file
 load_dotenv()
@@ -18,6 +19,9 @@ config = BottyConfig.from_env()
 
 def main() -> None:
     """Start the bot."""
+    for line in build_startup_sudoers_guidance(config):
+        logging.info(line)
+
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(config.telegram_bot_token).build()
 

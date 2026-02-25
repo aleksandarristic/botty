@@ -10,7 +10,9 @@
 
 set -euo pipefail
 
-DEFAULT_SERVICE_USER="botty"
+# Default to the account running the installer so Botty can run as the current user
+# without extra service-account setup.
+DEFAULT_SERVICE_USER="$(id -un)"
 SERVICE_NAME="botty"
 SUDOERS_PATH="/etc/sudoers.d/botty"
 
@@ -634,7 +636,11 @@ main() {
   local service_group
   service_group="$(id -gn "$SERVICE_USER")"
 
-  prepare_runtime_tree "$SERVICE_USER" "$service_group" "$INSTALL_DIR"
+  if [[ "$INSTALL_DIR" == "$SOURCE_DIR" && "$SERVICE_USER" == "$(id -un)" ]]; then
+    msg "${GREEN}In-place install as current user; skipping ownership/permission hardening.${NOFORMAT}"
+  else
+    prepare_runtime_tree "$SERVICE_USER" "$service_group" "$INSTALL_DIR"
+  fi
   build_python_env_as_service_user "$SERVICE_USER" "$service_group" "$INSTALL_DIR"
   collect_enabled_commands_interactive
   setup_systemd_service

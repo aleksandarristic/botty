@@ -15,14 +15,14 @@ curl -sSL https://raw.githubusercontent.com/aleksandarristic/botty/main/install.
 Recommended update workflow:
 
 1. Run `git pull` in your normal-user source repo (for example under your home directory).
-2. Run `./install.sh --install-dir=/opt/botty --service-user=botty` from that source repo.
+2. Run `./install.sh` from that source repo (or pass `--install-dir` / `--service-user` if you want a different layout).
 
 During install, the script syncs source files into `<install_dir>` (it does not run `git pull` in `<install_dir>`). Behind the scenes it:
 
 1. Prompts for or sources `TELEGRAM_BOT_TOKEN` and one or more comma-separated `AUTHORIZED_USER_ID`s.
 2. Prompts for optional service-specific values (`GOHOME_API_URL`, `EMBY_DATA_PATH`, `MEDIA_PATH`) when not already set.
 3. Lists enabled systemd services and prompts for `BOTTY_SERVICE_ALLOWLIST` (services Botty may manage).
-4. Creates/uses a dedicated service account (default: `botty`).
+4. Uses the selected service account (default: your current user running the installer).
 5. Creates `<install_dir>/.venv`, installs `botty` in editable mode, and writes a `botty.env` file.
 6. Registers `/etc/systemd/system/botty.service` with the selected service user, reloads the daemon, enables, and restarts the service.
 7. Generates a scoped sudoers policy in `/etc/sudoers.d/botty` based on the selected service allow-list.
@@ -33,7 +33,7 @@ Additional flags:
 - `--update`: accepted for backward compatibility; prints a note to run `git pull` in source repo first.
 - `--reinstall`: re-prompts for every secret and path, overwriting `botty.env`.
 - `--uninstall`: stops/disables the service and removes the unit file (leaving the install directory intact).
-- `--service-user=<name>`: optional override for the service account (default `botty`).
+- `--service-user=<name>`: optional override for the service account (default: current installer user).
 - `--install-dir=<path>`: optional install target override (for example `--install-dir=/opt/botty`), even when running installer from a local clone.
 - `--python-bin=<path>`: optional explicit Python interpreter for venv creation (example: `--python-bin=/usr/bin/python3`).
 
@@ -131,7 +131,13 @@ Several commands require `sudo` privileges. Command handlers opt in with `sudo=T
 - If `BOTTY_SUDO_PASSWORD` is set, commands run via `sudo -S` and the password is passed through stdin.
 - If `BOTTY_SUDO_PASSWORD` is not set, commands run via `sudo -n` (non-interactive), which requires passwordless sudo.
 
-For production, configure narrowly scoped passwordless sudo for the bot service user. `install.sh` now generates `/etc/sudoers.d/botty` automatically from `BOTTY_SERVICE_ALLOWLIST`.
+For production, keep `BOTTY_SUDO_PASSWORD` unset and use TOTP + narrowly scoped `NOPASSWD` sudoers entries for the bot runtime user. `install.sh` generates `/etc/sudoers.d/botty` automatically from `BOTTY_SERVICE_ALLOWLIST`.
+
+At startup, Botty now logs a sudo/TOTP matrix and a suggested sudoers snippet for the current runtime user. This output shows:
+- which enabled commands require sudo
+- which service targets are implied by `BOTTY_SERVICE_ALLOWLIST`
+- exact `Cmnd_Alias` entries to allow in sudoers
+- warnings when command enablement and allow-list values conflict
 
 ### Privilege Matrix
 
@@ -153,14 +159,14 @@ Create `/etc/sudoers.d/botty` with `visudo`:
 sudo visudo -f /etc/sudoers.d/botty
 ```
 
-Example policy for service user `botty`:
+Example policy for service user `<service-user>`:
 
 ```sudoers
 Cmnd_Alias BOTTY_SYSTEMCTL = /usr/bin/systemctl start botty, /usr/bin/systemctl stop botty, /usr/bin/systemctl restart botty, /usr/bin/systemctl status botty, /usr/bin/systemctl start nginx, /usr/bin/systemctl stop nginx, /usr/bin/systemctl restart nginx, /usr/bin/systemctl status nginx
 Cmnd_Alias BOTTY_LOGS = /usr/bin/journalctl -u botty -n 20 --no-pager, /usr/bin/journalctl -u nginx -n 20 --no-pager
 Cmnd_Alias BOTTY_REBOOT = /usr/sbin/reboot, /usr/bin/reboot
 
-botty ALL=(root) NOPASSWD: BOTTY_SYSTEMCTL, BOTTY_LOGS, BOTTY_REBOOT
+<service-user> ALL=(root) NOPASSWD: BOTTY_SYSTEMCTL, BOTTY_LOGS, BOTTY_REBOOT
 ```
 
 Then:
@@ -168,32 +174,30 @@ Then:
 ```bash
 sudo chown root:root /etc/sudoers.d/botty
 sudo chmod 440 /etc/sudoers.d/botty
-sudo -l -U botty
+sudo -l -U <service-user>
 ```
 
 If your managed services run under different Linux users, this is still fine: `systemctl`/`journalctl` are system-level controls. What matters is which unit names you allow in sudoers, not the runtime user of those units.
 
-### Dedicated Service User Guide
+### Service User Guide
 
-Yes, `install.sh` can create the service user automatically.
+By default, `install.sh` runs Botty as the same user that runs the installer.
 
 Default behavior:
-- service user is `botty`
-- installer creates `botty` if missing
-- systemd unit runs with `User=botty`
+- service user is your current user
+- installer reuses that account
+- systemd unit runs with `User=<current-user>`
 
-Manual setup (if you want to pre-create it yourself):
+If you prefer a dedicated account, you can still create one manually:
 
 ```bash
 sudo groupadd --system botty
 sudo useradd --system --gid botty --create-home --home-dir /home/botty --shell /usr/sbin/nologin botty
 ```
 
-Then run installer:
+Then run installer with an explicit override:
 
 ```bash
-./install.sh
-# or choose another account explicitly:
 ./install.sh --service-user=mybot
 ```
 
