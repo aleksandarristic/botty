@@ -26,3 +26,6 @@ GEMINI.md
 .gemini
 .codex
 .claude
+
+# Local agent environment
+.agent-env.local.md
